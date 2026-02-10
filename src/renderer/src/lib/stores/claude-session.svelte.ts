@@ -127,12 +127,21 @@ class ClaudeSessionStore {
     }
 
     const id = `claude-${nextConvId++}`
+
+    // Add a system-like message so the user sees the session was restored
+    const resumeMsg: ClaudeMessage = {
+      id: `msg-${Date.now()}-resume`,
+      role: 'assistant',
+      content: `Resumed session: **${saved.title}**\n\nThis conversation will continue from where you left off. Send a message to pick up.`,
+      timestamp: saved.lastUsed
+    }
+
     const conversation: ClaudeConversation = {
       id,
       claudeSessionId: saved.sessionId,
       title: saved.title,
       workspacePath: saved.workspacePath,
-      messages: [],
+      messages: [resumeMsg],
       isStreaming: false,
       streamingContent: '',
       streamingBlocks: []
@@ -173,7 +182,8 @@ class ClaudeSessionStore {
 
     const cwd = conv.workspacePath || ''
     const model = uiStore.selectedModel || 'sonnet'
-    await window.zeus.claudeSession.send(id, prompt, cwd, model)
+    // Pass claudeSessionId so main process can use --resume for continued sessions
+    await window.zeus.claudeSession.send(id, prompt, cwd, model, conv.claudeSessionId ?? undefined)
   }
 
   /** Switch to a conversation. */

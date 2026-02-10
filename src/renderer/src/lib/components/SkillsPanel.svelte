@@ -2,6 +2,7 @@
   import { skillsStore } from '../stores/skills.svelte.js'
   import { workspaceStore } from '../stores/workspace.svelte.js'
   import { uiStore } from '../stores/ui.svelte.js'
+  import { claudeSessionStore } from '../stores/claude-session.svelte.js'
   import type { CustomSkill } from '../types/index.js'
 
   /** Track collapsed groups */
@@ -37,7 +38,25 @@
   /** Insert the slash command into the active InputBar so user can type more */
   function useSkill(skill: CustomSkill) {
     const cmd = skillsStore.getSlashCommand(skill)
-    uiStore.prefillInput(cmd)
+
+    // Ensure there's an active Claude conversation for this workspace
+    const ws = workspaceStore.active
+    if (ws) {
+      const existing = claudeSessionStore.conversations.find((c) => c.workspacePath === ws.path)
+      if (!existing) {
+        claudeSessionStore.create(ws.path)
+      } else if (claudeSessionStore.activeId !== existing.id) {
+        claudeSessionStore.activeId = existing.id
+      }
+    }
+
+    // Switch to Claude view so the InputBar is visible
+    uiStore.activeView = 'claude'
+
+    // Prefill after a tick so InputBar has time to become active
+    requestAnimationFrame(() => {
+      uiStore.prefillInput(cmd)
+    })
   }
 
   function toggleGroup(key: string) {
@@ -290,7 +309,14 @@
   .section-label {
     display: flex; align-items: center; gap: 6px;
     font-size: 10px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.05em; color: #666; padding: 0 4px 8px;
+    letter-spacing: 0.05em; color: #666;
+    padding: 6px 4px 6px;
+    position: sticky; top: 0; z-index: 2;
+    background: #141414;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-bottom: 1px solid #1e1e1e;
+    margin: 0 -12px; padding-left: 16px; padding-right: 16px;
   }
   .section-label .count {
     background: #262626; color: #999; font-size: 9px;

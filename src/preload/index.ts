@@ -192,8 +192,8 @@ contextBridge.exposeInMainWorld('zeus', {
 
   // ── Claude Session (headless -p mode) ──
   claudeSession: {
-    send: (conversationId: string, prompt: string, cwd: string, model?: string) =>
-      ipcRenderer.invoke('claude-session:send', conversationId, prompt, cwd, model),
+    send: (conversationId: string, prompt: string, cwd: string, model?: string, resumeSessionId?: string) =>
+      ipcRenderer.invoke('claude-session:send', conversationId, prompt, cwd, model, resumeSessionId),
     abort: (conversationId: string) =>
       ipcRenderer.invoke('claude-session:abort', conversationId),
     close: (conversationId: string) =>

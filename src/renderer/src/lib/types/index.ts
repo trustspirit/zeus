@@ -185,7 +185,7 @@ export interface ZeusAPI {
     update(): Promise<ClaudeUpdateResult>
   }
   claudeSession: {
-    send(conversationId: string, prompt: string, cwd: string, model?: string): Promise<boolean>
+    send(conversationId: string, prompt: string, cwd: string, model?: string, resumeSessionId?: string): Promise<boolean>
     abort(conversationId: string): Promise<boolean>
     close(conversationId: string): Promise<boolean>
     listSaved(workspacePath: string): Promise<SavedSession[]>

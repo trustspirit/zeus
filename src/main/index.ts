@@ -528,8 +528,8 @@ function registerIPC(): void {
   // ── Claude Session (headless -p mode with stream-json) ──
   ipcMain.handle(
     'claude-session:send',
-    (_, conversationId: string, prompt: string, cwd: string, model?: string) => {
-      return spawnClaudeSession(conversationId, prompt, cwd, model)
+    (_, conversationId: string, prompt: string, cwd: string, model?: string, resumeSessionId?: string) => {
+      return spawnClaudeSession(conversationId, prompt, cwd, model, resumeSessionId)
     }
   )
 
@@ -980,12 +980,17 @@ function getClaudeCliPath(): string {
   return 'claude'
 }
 
-function spawnClaudeSession(conversationId: string, prompt: string, cwd: string, model?: string): boolean {
+function spawnClaudeSession(conversationId: string, prompt: string, cwd: string, model?: string, resumeSessionId?: string): boolean {
   // Get or create session state
   let session = claudeSessions.get(conversationId)
   if (!session) {
     session = { process: null, sessionId: null, cwd }
     claudeSessions.set(conversationId, session)
+  }
+
+  // If resuming a saved session, set the sessionId so --resume is used
+  if (resumeSessionId && !session.sessionId) {
+    session.sessionId = resumeSessionId
   }
 
   // [R2] Kill any still-running process for this conversation
