@@ -17,7 +17,7 @@
   import WelcomeScreen from './lib/components/WelcomeScreen.svelte'
   import StatusBar from './lib/components/StatusBar.svelte'
   import RightPanel from './lib/components/RightPanel.svelte'
-  import IDEModal from './lib/components/IDEModal.svelte'
+  // IDEModal replaced by IDEDropdown in Toolbar
   import UpdateModal from './lib/components/UpdateModal.svelte'
   import ContextMenu from './lib/components/ContextMenu.svelte'
   import Toast from './lib/components/Toast.svelte'
@@ -145,12 +145,25 @@
     }
   })
 
-  function openIDE() {
+  async function openIDE() {
     if (!workspaceStore.active) {
       uiStore.showToast('Please select a workspace first', 'error')
       return
     }
-    uiStore.ideModalOpen = true
+    // Use default IDE preference or first available
+    const pref = await window.zeus.ide.getPreference()
+    const list = ideStore.list
+    const ide = list.find((i) => i.id === pref) ?? list[0]
+    if (!ide) {
+      uiStore.showToast('No IDEs found on your system', 'error')
+      return
+    }
+    const result = await ideStore.open(ide.cmd, workspaceStore.active.path)
+    if (result.success) {
+      uiStore.showToast(`Opening in ${ide.name}...`, 'info')
+    } else {
+      uiStore.showToast(`Failed: ${result.error}`, 'error')
+    }
   }
 
   function revealInFinder() {
@@ -219,7 +232,6 @@
       }
     }
     if (e.key === 'Escape') {
-      uiStore.ideModalOpen = false
       uiStore.updateModalOpen = false
       uiStore.closeContextMenu()
     }
@@ -242,7 +254,6 @@
 
   <main class="main-content">
     <Toolbar
-      onopenIDE={openIDE}
       onreveal={revealInFinder}
       ontogglePanel={toggleRightPanel}
     />
@@ -267,7 +278,6 @@
   <RightPanel />
 </div>
 
-<IDEModal />
 <UpdateModal />
 <ContextMenu onaction={handleContextAction} />
 <Toast />

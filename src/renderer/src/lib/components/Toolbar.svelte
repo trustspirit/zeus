@@ -1,12 +1,11 @@
 <script lang="ts">
   import { uiStore } from '../stores/ui.svelte.js'
   import IconSidebar from './icons/IconSidebar.svelte'
-  import IconCode from './icons/IconCode.svelte'
   import IconFolder from './icons/IconFolder.svelte'
   import IconPanelRight from './icons/IconPanelRight.svelte'
+  import IDEDropdown from './IDEDropdown.svelte'
 
-  let { onopenIDE, onreveal, ontogglePanel }: {
-    onopenIDE: () => void
+  let { onreveal, ontogglePanel }: {
     onreveal: () => void
     ontogglePanel: () => void
   } = $props()
@@ -20,9 +19,7 @@
   </div>
 
   <div class="toolbar-right">
-    <button class="icon-btn" title="Open in IDE" onclick={onopenIDE}>
-      <IconCode size={16} />
-    </button>
+    <IDEDropdown />
     <button class="icon-btn" title="Reveal in Finder" onclick={onreveal}>
       <IconFolder size={16} />
     </button>

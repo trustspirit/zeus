@@ -336,6 +336,12 @@ function createTerminal(workspacePath?: string): { id: number; cwd: string } {
 function createWindow(): void {
   const bounds = store.windowBounds
 
+  // Resolve app icon (works for dev & packaged)
+  const iconPath = path.join(
+    app.isPackaged ? process.resourcesPath : path.join(__dirname, '../../resources'),
+    process.platform === 'win32' ? 'icon.ico' : 'icon.png'
+  )
+
   mainWindow = new BrowserWindow({
     width: bounds?.width ?? 1400,
     height: bounds?.height ?? 900,
@@ -348,6 +354,7 @@ function createWindow(): void {
     trafficLightPosition: { x: 16, y: 18 },
     vibrancy: 'under-window',
     visualEffectState: 'active',
+    ...(process.platform !== 'darwin' && fs.existsSync(iconPath) ? { icon: iconPath } : {}),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       nodeIntegration: false,
@@ -624,6 +631,11 @@ function registerIPC(): void {
   ipcMain.handle('files:read', (_, filePath: string) => readFileContent(filePath))
   ipcMain.handle('files:write', (_, filePath: string, content: string) => writeFileContent(filePath, content))
 
+  // Git diff
+  ipcMain.handle('git:diff', (_, workspacePath: string) => getGitDiff(workspacePath))
+  ipcMain.handle('git:diff-file', (_, workspacePath: string, filePath: string) => getGitDiffFile(workspacePath, filePath))
+  ipcMain.handle('git:changed-files', (_, workspacePath: string) => getGitChangedFiles(workspacePath))
+
   // ── Saved Claude Sessions (per-workspace history) ──
   ipcMain.handle('claude-session:list-saved', (_, workspacePath: string) => {
     const sessions = store.savedSessions ?? []
@@ -678,6 +690,21 @@ function registerIPC(): void {
       session.process.kill('SIGINT')
     }
     return true
+  })
+
+  // Write a response to the running Claude process stdin (for permission prompts, option selection)
+  ipcMain.handle('claude-session:respond', (_, conversationId: string, response: string) => {
+    const session = claudeSessions.get(conversationId)
+    if (session?.process?.stdin && !session.process.stdin.destroyed) {
+      try {
+        session.process.stdin.write(response + '\n')
+        return true
+      } catch (e) {
+        console.warn(`[zeus] Failed to write to stdin [${conversationId}]:`, e)
+        return false
+      }
+    }
+    return false
   })
 
   // [B1] Clean up session entry when conversation is closed from renderer
@@ -1283,6 +1310,116 @@ function getClaudeCliPath(): string {
   return 'claude'
 }
 
+// ── Prompt Detection ─────────────────────────────────────────────────────────
+// Detect permission prompts and option requests from Claude Code's stderr output.
+// These appear when Claude wants to use a tool that needs permission, or when it
+// presents numbered options for the user to choose from.
+
+interface DetectedPrompt {
+  promptType: 'permission' | 'yesno' | 'choice' | 'input'
+  message: string
+  options: { label: string; value: string; key?: string }[]
+  toolName?: string
+  toolInput?: string
+}
+
+function detectPrompt(text: string): DetectedPrompt | null {
+  // ── Permission: "Allow <tool>? (y)es / (n)o / (a)lways / ..." ──
+  // Common patterns:
+  //   "? Allow Read(...) (y/n)"
+  //   "Do you want to allow Bash(rm -rf ...)? (y/n/a)"
+  //   "Allow mcp__server__tool? Yes / No / Always allow"
+  const permissionMatch = text.match(
+    /(?:\?\s*)?(?:Allow|Do you want to allow|Approve)\s+(.+?)(?:\s*\?\s*|\s+)?\(([ynaYNA/\s]+)\)/i
+  )
+  if (permissionMatch) {
+    const toolDesc = permissionMatch[1].trim()
+    const optStr = permissionMatch[2].toLowerCase()
+    const options: DetectedPrompt['options'] = []
+    if (optStr.includes('y')) options.push({ label: 'Yes', value: 'y', key: 'y' })
+    if (optStr.includes('n')) options.push({ label: 'No', value: 'n', key: 'n' })
+    if (optStr.includes('a')) options.push({ label: 'Always', value: 'a', key: 'a' })
+    // Parse tool name/input from "ToolName(input)" format
+    const toolParts = toolDesc.match(/^(\w+)\((.+)\)$/)
+    return {
+      promptType: 'permission',
+      message: text,
+      options: options.length > 0 ? options : [
+        { label: 'Yes', value: 'y', key: 'y' },
+        { label: 'No', value: 'n', key: 'n' }
+      ],
+      toolName: toolParts?.[1],
+      toolInput: toolParts?.[2]
+    }
+  }
+
+  // ── Permission: "Yes / No / Always allow" style (multi-line) ──
+  const yesNoAlwaysMatch = text.match(
+    /(?:Allow|Approve|accept|permit|trust)\b.+?(?:\n|.)*?(Yes|No|Always|Deny|Allow|Cancel)/i
+  )
+  if (yesNoAlwaysMatch && /\b(?:yes|no|always|deny|allow|cancel)\b/i.test(text)) {
+    const options: DetectedPrompt['options'] = []
+    if (/\byes\b/i.test(text)) options.push({ label: 'Yes', value: 'y', key: 'y' })
+    if (/\bno\b/i.test(text)) options.push({ label: 'No', value: 'n', key: 'n' })
+    if (/\balways\b/i.test(text)) options.push({ label: 'Always', value: 'a', key: 'a' })
+    if (/\bdeny\b/i.test(text)) options.push({ label: 'Deny', value: 'n', key: 'n' })
+    if (options.length >= 2) {
+      return {
+        promptType: 'yesno',
+        message: text,
+        options
+      }
+    }
+  }
+
+  // ── Numbered choices: "1) ...\n2) ...\n3) ..." or "1. ... 2. ..." ──
+  const numberedLines = text.match(/^\s*(\d+)[.)]\s+.+$/gm)
+  if (numberedLines && numberedLines.length >= 2) {
+    const options: DetectedPrompt['options'] = []
+    for (const line of numberedLines) {
+      const m = line.match(/^\s*(\d+)[.)]\s+(.+)$/)
+      if (m) {
+        options.push({ label: m[2].trim(), value: m[1], key: m[1] })
+      }
+    }
+    if (options.length >= 2) {
+      // Extract the question/header (text before the first numbered line)
+      const firstIdx = text.indexOf(numberedLines[0])
+      const header = firstIdx > 0 ? text.slice(0, firstIdx).trim() : 'Choose an option'
+      return {
+        promptType: 'choice',
+        message: header || 'Choose an option',
+        options
+      }
+    }
+  }
+
+  // ── Generic yes/no: "... (y/n)" or "... [Y/n]" ──
+  const ynMatch = text.match(/(.+?)\s*[\[(]([yYnN][/|][yYnN])[\])]\s*$/)
+  if (ynMatch) {
+    return {
+      promptType: 'yesno',
+      message: ynMatch[1].trim(),
+      options: [
+        { label: 'Yes', value: 'y', key: 'y' },
+        { label: 'No', value: 'n', key: 'n' }
+      ]
+    }
+  }
+
+  // ── Waiting for input: "? ..." or "Enter ..." ending with ":" ──
+  const inputMatch = text.match(/^\?\s+(.+?):\s*$/)
+  if (inputMatch) {
+    return {
+      promptType: 'input',
+      message: inputMatch[1].trim(),
+      options: []
+    }
+  }
+
+  return null
+}
+
 function spawnClaudeSession(conversationId: string, prompt: string, cwd: string, model?: string, resumeSessionId?: string): boolean {
   // Get or create session state
   let session = claudeSessions.get(conversationId)
@@ -1335,9 +1472,8 @@ function spawnClaudeSession(conversationId: string, prompt: string, cwd: string,
     stdio: ['pipe', 'pipe', 'pipe']
   })
 
-  // CRITICAL: Close stdin immediately — Claude with -p doesn't need it.
-  // Leaving stdin open causes Claude to hang waiting for potential piped input.
-  child.stdin?.end()
+  // Keep stdin open so we can respond to permission prompts and option requests.
+  // Claude Code in -p mode may ask for tool permissions via stderr.
 
   session.process = child
 
@@ -1374,14 +1510,37 @@ function spawnClaudeSession(conversationId: string, prompt: string, cwd: string,
     }
   })
 
+  // Accumulate stderr for multi-chunk prompt detection
+  let stderrBuf = ''
+  let stderrFlushTimer: ReturnType<typeof setTimeout> | null = null
+
   child.stderr?.on('data', (chunk: Buffer) => {
     const text = chunk.toString()
-    console.log(`[zeus] Claude stderr [${conversationId}]:`, text.slice(0, 200))
-    // stderr can contain progress/debug info — forward as stderr event
-    mainWindow?.webContents.send('claude-session:event', {
-      id: conversationId,
-      event: { type: 'stderr', text }
-    })
+    console.log(`[zeus] Claude stderr [${conversationId}]:`, text.slice(0, 300))
+
+    stderrBuf += text
+
+    // Debounce: flush after 150ms of silence to assemble multi-chunk prompts
+    if (stderrFlushTimer) clearTimeout(stderrFlushTimer)
+    stderrFlushTimer = setTimeout(() => {
+      const full = stderrBuf
+      stderrBuf = ''
+      // Strip ANSI escape codes for prompt detection
+      const clean = full.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim()
+      const prompt = detectPrompt(clean)
+      if (prompt) {
+        mainWindow?.webContents.send('claude-session:event', {
+          id: conversationId,
+          event: { type: 'prompt', ...prompt, rawText: clean }
+        })
+      } else {
+        // Regular stderr — forward for status display
+        mainWindow?.webContents.send('claude-session:event', {
+          id: conversationId,
+          event: { type: 'stderr', text: full }
+        })
+      }
+    }, 150)
   })
 
   child.on('close', (code) => {
@@ -1424,6 +1583,158 @@ function spawnClaudeSession(conversationId: string, prompt: string, cwd: string,
   })
 
   return true
+}
+
+// ── Git Diff Helpers ────────────────────────────────────────────────────────
+
+interface GitChangedFile {
+  path: string
+  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'unknown'
+  additions: number
+  deletions: number
+}
+
+function getGitDiff(workspacePath: string): string {
+  try {
+    // Get both staged and unstaged changes
+    const diff = execSync('git diff HEAD', {
+      cwd: workspacePath,
+      encoding: 'utf-8',
+      timeout: 10000,
+      maxBuffer: 5 * 1024 * 1024,
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+    // If no diff against HEAD, try working tree changes
+    if (!diff.trim()) {
+      return execSync('git diff', {
+        cwd: workspacePath,
+        encoding: 'utf-8',
+        timeout: 10000,
+        maxBuffer: 5 * 1024 * 1024,
+        stdio: ['pipe', 'pipe', 'pipe']
+      })
+    }
+    return diff
+  } catch {
+    return ''
+  }
+}
+
+function getGitDiffFile(workspacePath: string, filePath: string): string {
+  try {
+    const diff = execSync(`git diff HEAD -- "${filePath}"`, {
+      cwd: workspacePath,
+      encoding: 'utf-8',
+      timeout: 10000,
+      maxBuffer: 5 * 1024 * 1024,
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+    if (!diff.trim()) {
+      return execSync(`git diff -- "${filePath}"`, {
+        cwd: workspacePath,
+        encoding: 'utf-8',
+        timeout: 10000,
+        maxBuffer: 5 * 1024 * 1024,
+        stdio: ['pipe', 'pipe', 'pipe']
+      })
+    }
+    return diff
+  } catch {
+    return ''
+  }
+}
+
+function getGitChangedFiles(workspacePath: string): GitChangedFile[] {
+  try {
+    // Use git diff --numstat to get additions/deletions per file
+    const numstat = execSync('git diff HEAD --numstat', {
+      cwd: workspacePath,
+      encoding: 'utf-8',
+      timeout: 10000,
+      stdio: ['pipe', 'pipe', 'pipe']
+    }).trim()
+
+    // Also get status letters
+    const nameStatus = execSync('git diff HEAD --name-status', {
+      cwd: workspacePath,
+      encoding: 'utf-8',
+      timeout: 10000,
+      stdio: ['pipe', 'pipe', 'pipe']
+    }).trim()
+
+    const statusMap = new Map<string, string>()
+    for (const line of nameStatus.split('\n')) {
+      if (!line.trim()) continue
+      const [status, ...rest] = line.split('\t')
+      const fpath = rest.join('\t')
+      if (fpath) statusMap.set(fpath, status)
+    }
+
+    const files: GitChangedFile[] = []
+    for (const line of numstat.split('\n')) {
+      if (!line.trim()) continue
+      const [add, del, ...rest] = line.split('\t')
+      const fpath = rest.join('\t')
+      if (!fpath) continue
+      const rawStatus = statusMap.get(fpath) ?? 'M'
+      let status: GitChangedFile['status'] = 'modified'
+      if (rawStatus.startsWith('A')) status = 'added'
+      else if (rawStatus.startsWith('D')) status = 'deleted'
+      else if (rawStatus.startsWith('R')) status = 'renamed'
+      files.push({
+        path: fpath,
+        status,
+        additions: parseInt(add) || 0,
+        deletions: parseInt(del) || 0
+      })
+    }
+
+    // Also check untracked/unstaged if HEAD diff was empty
+    if (files.length === 0) {
+      const unstaged = execSync('git diff --numstat', {
+        cwd: workspacePath,
+        encoding: 'utf-8',
+        timeout: 10000,
+        stdio: ['pipe', 'pipe', 'pipe']
+      }).trim()
+      const unstagedStatus = execSync('git diff --name-status', {
+        cwd: workspacePath,
+        encoding: 'utf-8',
+        timeout: 10000,
+        stdio: ['pipe', 'pipe', 'pipe']
+      }).trim()
+
+      const sMap2 = new Map<string, string>()
+      for (const line of unstagedStatus.split('\n')) {
+        if (!line.trim()) continue
+        const [s, ...r] = line.split('\t')
+        const fp = r.join('\t')
+        if (fp) sMap2.set(fp, s)
+      }
+
+      for (const line of unstaged.split('\n')) {
+        if (!line.trim()) continue
+        const [add, del, ...rest] = line.split('\t')
+        const fpath = rest.join('\t')
+        if (!fpath) continue
+        const rawStatus = sMap2.get(fpath) ?? 'M'
+        let status: GitChangedFile['status'] = 'modified'
+        if (rawStatus.startsWith('A')) status = 'added'
+        else if (rawStatus.startsWith('D')) status = 'deleted'
+        else if (rawStatus.startsWith('R')) status = 'renamed'
+        files.push({
+          path: fpath,
+          status,
+          additions: parseInt(add) || 0,
+          deletions: parseInt(del) || 0
+        })
+      }
+    }
+
+    return files
+  } catch {
+    return []
+  }
 }
 
 function killAllClaudeSessions(): void {

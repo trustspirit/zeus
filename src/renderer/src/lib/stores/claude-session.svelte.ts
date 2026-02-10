@@ -1,4 +1,4 @@
-import type { ClaudeConversation, ClaudeMessage, ContentBlock, ClaudeStreamEvent, SavedSession } from '../types/index.js'
+import type { ClaudeConversation, ClaudeMessage, ContentBlock, ClaudeStreamEvent, SavedSession, PendingPrompt } from '../types/index.js'
 import { uiStore } from './ui.svelte.js'
 
 // ── Claude Session Store (headless -p mode) ──────────────────────────────────
@@ -187,7 +187,8 @@ class ClaudeSessionStore {
       isStreaming: false,
       streamingContent: '',
       streamingBlocks: [],
-      streamingStatus: ''
+      streamingStatus: '',
+      pendingPrompt: null
     }
 
     this.conversations = [...this.conversations, conversation]
@@ -236,7 +237,8 @@ class ClaudeSessionStore {
       isStreaming: false,
       streamingContent: '',
       streamingBlocks: [],
-      streamingStatus: ''
+      streamingStatus: '',
+      pendingPrompt: null
     }
 
     this.conversations = [...this.conversations, conversation]
@@ -255,10 +257,33 @@ class ClaudeSessionStore {
     this.savedSessions = this.savedSessions.filter((s) => s.sessionId !== sessionId)
   }
 
-  /** Send a user message and start streaming response. */
+  /** Send a user message and start streaming response.
+   *  If already streaming, finalize current response and send immediately (Claude Code handles --resume). */
   async send(id: string, prompt: string): Promise<void> {
     const conv = this.conversations.find((c) => c.id === id)
     if (!conv) return
+
+    // If currently streaming, finalize the partial response before sending new message
+    if (conv.isStreaming) {
+      // Commit whatever was streamed so far as a partial assistant message
+      if (conv.streamingContent.trim()) {
+        const partialMsg: ClaudeMessage = {
+          id: `msg-${Date.now()}-assistant-partial`,
+          role: 'assistant',
+          content: conv.streamingContent,
+          blocks: conv.streamingBlocks.length > 0 ? [...conv.streamingBlocks] : undefined,
+          timestamp: Date.now()
+        }
+        conv.messages = [...conv.messages, partialMsg]
+      }
+      // Abort the running process — main process kills it and fires 'done'
+      await window.zeus.claudeSession.abort(id)
+      conv.isStreaming = false
+      conv.streamingContent = ''
+      conv.streamingBlocks = []
+      conv.streamingStatus = ''
+      conv.pendingPrompt = null
+    }
 
     // Add user message
     const userMsg: ClaudeMessage = {
@@ -301,6 +326,7 @@ class ClaudeSessionStore {
       conv.streamingContent = ''
       conv.streamingBlocks = []
       conv.streamingStatus = ''
+      conv.pendingPrompt = null
     }
 
     // [B1] Clean up main process session entry
@@ -320,6 +346,18 @@ class ClaudeSessionStore {
     }
   }
 
+  /** Respond to a pending prompt (permission, option selection, etc.) */
+  async respond(id: string, response: string): Promise<void> {
+    const conv = this.conversations.find((c) => c.id === id)
+    if (!conv?.pendingPrompt) return
+
+    conv.pendingPrompt = null
+    conv.streamingStatus = 'Processing…'
+    this.conversations = [...this.conversations]
+
+    await window.zeus.claudeSession.respond(id, response)
+  }
+
   /** Abort the currently streaming response. */
   async abort(id: string) {
     const conv = this.conversations.find((c) => c.id === id)
@@ -327,6 +365,7 @@ class ClaudeSessionStore {
       await window.zeus.claudeSession.abort(id)
       conv.isStreaming = false
       conv.streamingStatus = ''
+      conv.pendingPrompt = null
       this.conversations = [...this.conversations]
     }
   }
@@ -464,6 +503,21 @@ class ClaudeSessionStore {
         conv.streamingContent = conv.streamingContent.slice(-MAX_STREAMING_CONTENT)
       }
 
+    } else if (event.type === 'prompt') {
+      // Claude Code is asking for user input (permission, choice, etc.)
+      const promptData = any as Record<string, unknown>
+      const options = (promptData.options as Array<{ label: string; value: string; key?: string }>) ?? []
+      conv.pendingPrompt = {
+        id: `prompt-${Date.now()}`,
+        promptType: (promptData.promptType as PendingPrompt['promptType']) || 'yesno',
+        message: (promptData.message as string) || (promptData.rawText as string) || 'Claude Code needs your input',
+        options,
+        toolName: promptData.toolName as string | undefined,
+        toolInput: promptData.toolInput as string | undefined,
+        rawText: promptData.rawText as string | undefined
+      }
+      conv.streamingStatus = 'Waiting for your response…'
+
     } else if (event.type === 'error' || event.type === 'stderr') {
       const errText = typeof any.text === 'string' ? (any.text as string) : ''
       // Strip ANSI escape codes for status display
@@ -511,6 +565,7 @@ class ClaudeSessionStore {
     conv.streamingContent = ''
     conv.streamingBlocks = []
     conv.streamingStatus = ''
+    conv.pendingPrompt = null
 
     // Cap total messages to prevent unbounded growth
     if (conv.messages.length > MAX_MESSAGES) {

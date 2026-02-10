@@ -198,6 +198,8 @@ contextBridge.exposeInMainWorld('zeus', {
       ipcRenderer.invoke('claude-session:send', conversationId, prompt, cwd, model, resumeSessionId),
     abort: (conversationId: string) =>
       ipcRenderer.invoke('claude-session:abort', conversationId),
+    respond: (conversationId: string, response: string) =>
+      ipcRenderer.invoke('claude-session:respond', conversationId, response),
     close: (conversationId: string) =>
       ipcRenderer.invoke('claude-session:close', conversationId),
     listSaved: (workspacePath: string) =>
@@ -274,6 +276,13 @@ contextBridge.exposeInMainWorld('zeus', {
     listMd: (dirPath: string) => ipcRenderer.invoke('files:list-md', dirPath),
     read: (filePath: string) => ipcRenderer.invoke('files:read', filePath),
     write: (filePath: string, content: string) => ipcRenderer.invoke('files:write', filePath, content)
+  },
+
+  // ── Git ──
+  git: {
+    diff: (workspacePath: string) => ipcRenderer.invoke('git:diff', workspacePath),
+    diffFile: (workspacePath: string, filePath: string) => ipcRenderer.invoke('git:diff-file', workspacePath, filePath),
+    changedFiles: (workspacePath: string) => ipcRenderer.invoke('git:changed-files', workspacePath)
   },
 
   // ── Menu Actions ──

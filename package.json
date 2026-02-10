@@ -45,6 +45,12 @@
       "out/**/*",
       "!node_modules"
     ],
+    "extraResources": [
+      {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      }
+    ],
     "directories": {
       "output": "dist"
     }

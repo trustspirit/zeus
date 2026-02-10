@@ -146,6 +146,17 @@ export interface ClaudeMessage {
   timestamp: number
 }
 
+/** A prompt from Claude Code that requires user interaction (permission, option selection, etc.) */
+export interface PendingPrompt {
+  id: string
+  promptType: 'permission' | 'yesno' | 'choice' | 'input'
+  message: string
+  options: { label: string; value: string; key?: string }[]
+  toolName?: string
+  toolInput?: string
+  rawText?: string
+}
+
 export interface ClaudeConversation {
   id: string             // Zeus-internal conversation ID
   claudeSessionId: string | null  // Claude Code's session_id for --resume
@@ -157,6 +168,8 @@ export interface ClaudeConversation {
   streamingBlocks: ContentBlock[]
   /** Real-time status line shown during streaming (e.g. "Reading file.ts…", "Running bash…") */
   streamingStatus: string
+  /** Pending prompt from Claude Code waiting for user response */
+  pendingPrompt: PendingPrompt | null
 }
 
 export interface ClaudeStreamEvent {
@@ -178,6 +191,14 @@ export interface SavedSession {
   title: string
   workspacePath: string
   lastUsed: number
+}
+
+// ── Git Diff ──────────────────────────────────────────────────────────────────
+export interface GitChangedFile {
+  path: string
+  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'unknown'
+  additions: number
+  deletions: number
 }
 
 // ── Store ──────────────────────────────────────────────────────────────────────
@@ -220,6 +241,7 @@ export interface ZeusAPI {
   claudeSession: {
     send(conversationId: string, prompt: string, cwd: string, model?: string, resumeSessionId?: string): Promise<boolean>
     abort(conversationId: string): Promise<boolean>
+    respond(conversationId: string, response: string): Promise<boolean>
     close(conversationId: string): Promise<boolean>
     listSaved(workspacePath: string): Promise<SavedSession[]>
     save(session: { sessionId: string; title: string; workspacePath: string }): Promise<boolean>
@@ -267,6 +289,11 @@ export interface ZeusAPI {
     listMd(dirPath: string): Promise<MarkdownFile[]>
     read(filePath: string): Promise<string | null>
     write(filePath: string, content: string): Promise<boolean>
+  }
+  git: {
+    diff(workspacePath: string): Promise<string>
+    diffFile(workspacePath: string, filePath: string): Promise<string>
+    changedFiles(workspacePath: string): Promise<GitChangedFile[]>
   }
   onAction(action: string, callback: () => void): () => void
 }

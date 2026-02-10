@@ -5,19 +5,55 @@
   import { claudeSessionStore } from '../stores/claude-session.svelte.js'
   import { uiStore } from '../stores/ui.svelte.js'
   import InputBar from './InputBar.svelte'
+  import ChangedFilesPanel from './ChangedFilesPanel.svelte'
   import IconClaude from './icons/IconClaude.svelte'
   import type { ClaudeMessage, ContentBlock } from '../types/index.js'
 
   let scrollEl: HTMLDivElement
   let inputBarRef = $state<InputBar | undefined>(undefined)
+  let changedFilesPanelRef = $state<ChangedFilesPanel | undefined>(undefined)
   let isDragOverView = $state(false)
 
   const conv = $derived(claudeSessionStore.activeConversation)
+  let wasStreaming = $state(false)
 
   // Focus input bar when switching to this view
   $effect(() => {
     if (conv && uiStore.activeView === 'claude') {
       tick().then(() => inputBarRef?.focus())
+    }
+  })
+
+  // Auto-refresh changed files when streaming finishes
+  $effect(() => {
+    const streaming = conv?.isStreaming ?? false
+    if (wasStreaming && !streaming) {
+      // Streaming just finished — check for file changes
+      changedFilesPanelRef?.refresh()
+    }
+    wasStreaming = streaming
+  })
+
+  // Keyboard shortcuts for prompt responses (y/n/a/1-9)
+  function handlePromptKeydown(e: KeyboardEvent) {
+    const prompt = conv?.pendingPrompt
+    if (!prompt || !conv) return
+    // Don't intercept if user is typing in input
+    const tag = (e.target as HTMLElement)?.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
+    const key = e.key.toLowerCase()
+    const match = prompt.options.find((o) => o.key === key || o.value === key)
+    if (match) {
+      e.preventDefault()
+      claudeSessionStore.respond(conv.id, match.value)
+    }
+  }
+
+  $effect(() => {
+    if (conv?.pendingPrompt) {
+      window.addEventListener('keydown', handlePromptKeydown)
+      return () => window.removeEventListener('keydown', handlePromptKeydown)
     }
   })
 
@@ -181,13 +217,85 @@
                   <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                   <div class="md">{@html renderMarkdown(conv.streamingContent)}</div>
                 {/if}
-                <!-- Status line: always visible during streaming -->
-                <div class="streaming-status">
-                  <span class="status-indicator">
-                    <span class="pulse"></span>
-                  </span>
-                  <span class="status-text">{conv.streamingStatus || 'Thinking…'}</span>
-                </div>
+                <!-- Prompt UI: shown when Claude Code asks for permission/options -->
+                {#if conv.pendingPrompt}
+                  <div class="prompt-ui">
+                    <div class="prompt-header">
+                      {#if conv.pendingPrompt.promptType === 'permission'}
+                        <svg class="prompt-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                      {:else if conv.pendingPrompt.promptType === 'choice'}
+                        <svg class="prompt-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+                      {:else}
+                        <svg class="prompt-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                      {/if}
+                      <span class="prompt-message">{conv.pendingPrompt.message}</span>
+                    </div>
+                    {#if conv.pendingPrompt.toolName}
+                      <div class="prompt-tool">
+                        <code>{conv.pendingPrompt.toolName}</code>
+                        {#if conv.pendingPrompt.toolInput}
+                          <span class="prompt-tool-input">{conv.pendingPrompt.toolInput.length > 120 ? conv.pendingPrompt.toolInput.slice(0, 120) + '…' : conv.pendingPrompt.toolInput}</span>
+                        {/if}
+                      </div>
+                    {/if}
+                    <div class="prompt-actions">
+                      {#if conv.pendingPrompt.options.length > 0}
+                        {#each conv.pendingPrompt.options as opt (opt.value)}
+                          <button
+                            class="prompt-btn"
+                            class:prompt-yes={opt.value === 'y'}
+                            class:prompt-no={opt.value === 'n'}
+                            class:prompt-always={opt.value === 'a'}
+                            onclick={() => claudeSessionStore.respond(conv.id, opt.value)}
+                            title={opt.key ? `Press ${opt.key}` : ''}
+                          >
+                            {#if opt.value === 'y'}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                            {:else if opt.value === 'n'}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            {:else if opt.value === 'a'}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            {/if}
+                            {opt.label}
+                            {#if opt.key}
+                              <kbd class="prompt-kbd">{opt.key}</kbd>
+                            {/if}
+                          </button>
+                        {/each}
+                      {:else}
+                        <!-- Free text input for 'input' type prompts -->
+                        <form class="prompt-input-form" onsubmit={(e) => {
+                          e.preventDefault()
+                          const form = e.currentTarget as HTMLFormElement
+                          const input = form.querySelector('input') as HTMLInputElement
+                          if (input.value.trim()) {
+                            claudeSessionStore.respond(conv.id, input.value.trim())
+                            input.value = ''
+                          }
+                        }}>
+                          <input
+                            class="prompt-text-input"
+                            type="text"
+                            placeholder="Type your response…"
+                            autofocus
+                          />
+                          <button class="prompt-btn prompt-yes" type="submit">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                            Send
+                          </button>
+                        </form>
+                      {/if}
+                    </div>
+                  </div>
+                {:else}
+                  <!-- Status line: always visible during streaming -->
+                  <div class="streaming-status">
+                    <span class="status-indicator">
+                      <span class="pulse"></span>
+                    </span>
+                    <span class="status-text">{conv.streamingStatus || 'Thinking…'}</span>
+                  </div>
+                {/if}
               </div>
             </div>
           </div>
@@ -198,7 +306,8 @@
       </div>
     </div>
 
-    <InputBar bind:this={inputBarRef} />
+    <ChangedFilesPanel bind:this={changedFilesPanelRef} />
+    <InputBar bind:this={inputBarRef} ontoggleChanges={() => changedFilesPanelRef?.toggle()} />
   {/if}
 </div>
 
@@ -262,7 +371,6 @@
     white-space: pre-wrap; word-break: break-word;
     border: 1px solid #3e4451;
   }
-
   .msg-assistant { display: flex; gap: 12px; padding: 12px 0; }
   .msg-avatar {
     width: 28px; height: 28px; border-radius: 10px;
@@ -336,4 +444,80 @@
     100% { opacity: 0.4; transform: scale(0.8); }
   }
   .status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 500px; }
+
+  /* ── Prompt UI ─────────────────────────────────────────────────────────── */
+  .prompt-ui {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 12px 14px; margin-top: 8px;
+    background: #2c2d31; border: 1px solid #3e4045; border-radius: 10px;
+    animation: status-fade-in 200ms ease;
+  }
+  .prompt-header {
+    display: flex; align-items: flex-start; gap: 8px;
+    font-size: 13px; color: #e0e0e0; line-height: 1.5;
+  }
+  .prompt-icon { flex-shrink: 0; color: #e5c07b; margin-top: 2px; }
+  .prompt-message {
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 200px; overflow-y: auto;
+  }
+  .prompt-tool {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px; background: #1e1f23; border-radius: 6px;
+    font-size: 12px; color: #abb2bf; overflow: hidden;
+  }
+  .prompt-tool code {
+    color: #c678dd; font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    font-size: 12px; background: none; padding: 0;
+  }
+  .prompt-tool-input {
+    color: #7f848e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .prompt-actions {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px;
+  }
+  .prompt-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 6px 14px; border: 1px solid #3e4045; border-radius: 6px;
+    background: #2c2d31; color: #abb2bf; font-size: 12px;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    cursor: pointer; transition: all 120ms ease;
+  }
+  .prompt-btn:hover { background: #363840; border-color: #5a5d65; color: #e0e0e0; }
+  .prompt-btn.prompt-yes {
+    border-color: rgba(152, 195, 121, 0.4); color: #98c379;
+  }
+  .prompt-btn.prompt-yes:hover {
+    background: rgba(152, 195, 121, 0.12); border-color: #98c379;
+  }
+  .prompt-btn.prompt-no {
+    border-color: rgba(224, 108, 117, 0.4); color: #e06c75;
+  }
+  .prompt-btn.prompt-no:hover {
+    background: rgba(224, 108, 117, 0.12); border-color: #e06c75;
+  }
+  .prompt-btn.prompt-always {
+    border-color: rgba(229, 192, 123, 0.4); color: #e5c07b;
+  }
+  .prompt-btn.prompt-always:hover {
+    background: rgba(229, 192, 123, 0.12); border-color: #e5c07b;
+  }
+  .prompt-input-form {
+    display: flex; gap: 8px; width: 100%;
+  }
+  .prompt-text-input {
+    flex: 1; padding: 6px 10px;
+    background: #1e1f23; border: 1px solid #3e4045; border-radius: 6px;
+    color: #e0e0e0; font-size: 12px;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    outline: none;
+  }
+  .prompt-text-input:focus { border-color: #5a5d65; }
+  .prompt-kbd {
+    display: inline-block; padding: 1px 5px; margin-left: 2px;
+    background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 3px; font-size: 10px; color: #7f848e;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    line-height: 1.4; vertical-align: middle;
+  }
 </style>

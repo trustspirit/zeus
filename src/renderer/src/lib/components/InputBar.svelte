@@ -8,6 +8,8 @@
   import IconClaude from './icons/IconClaude.svelte'
   import IconAnthropic from './icons/IconAnthropic.svelte'
 
+  let { ontoggleChanges }: { ontoggleChanges?: () => void } = $props()
+
   let inputEl: HTMLTextAreaElement
   let inputValue = $state('')
   let modelMenuOpen = $state(false)
@@ -241,7 +243,7 @@
   const claudeConv = $derived(claudeSessionStore.activeConversation)
   const hasActiveTarget = $derived(!!claudeConv)
   const isStreaming = $derived(claudeConv?.isStreaming ?? false)
-  const canSend = $derived((inputValue.trim().length > 0 || !!commandTag || attachedFiles.length > 0) && !isStreaming)
+  const canSend = $derived((inputValue.trim().length > 0 || !!commandTag || attachedFiles.length > 0))
 
   $effect(() => {
     const _ = claudeConv?.id
@@ -468,7 +470,7 @@
 
   function send() {
     const text = inputValue.trim()
-    if ((!text && !commandTag && attachedFiles.length === 0) || !claudeConv || isStreaming) return
+    if ((!text && !commandTag && attachedFiles.length === 0) || !claudeConv) return
     slashMenuOpen = false
 
     // Handle built-in commands locally
@@ -677,28 +679,33 @@
       bind:this={inputEl}
       bind:value={inputValue}
       class="input-field"
-      placeholder={isStreaming ? 'Claude is responding…' : commandTag ? 'Add instructions...' : attachedFiles.length > 0 ? 'Ask about these files...' : 'Ask Claude... (type / for commands)'}
+      placeholder={commandTag ? 'Add instructions...' : attachedFiles.length > 0 ? 'Ask about these files...' : 'Ask Claude... (type / for commands)'}
       rows="1"
       oninput={handleInput}
       onkeydown={handleKeydown}
       spellcheck="false"
       autocomplete="off"
-      disabled={isStreaming}
     ></textarea>
 
-    <button
-      class="send-btn"
-      class:active={canSend}
-      onclick={send}
-      disabled={!canSend}
-      title="Send (Enter)"
-    >
-      {#if isStreaming}
+    {#if isStreaming && !canSend}
+      <button
+        class="send-btn abort"
+        onclick={() => claudeConv && claudeSessionStore.abort(claudeConv.id)}
+        title="Stop (Ctrl+C)"
+      >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-      {:else}
+      </button>
+    {:else}
+      <button
+        class="send-btn"
+        class:active={canSend}
+        onclick={send}
+        disabled={!canSend}
+        title="Send (Enter)"
+      >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-      {/if}
-    </button>
+      </button>
+    {/if}
   </div>
 
   <div class="hints">
@@ -737,6 +744,12 @@
     <span class="hint"><kbd>Enter</kbd> send</span>
     <span class="hint"><kbd>Shift+Enter</kbd> newline</span>
     <span class="hint"><kbd>Ctrl+C</kbd> abort</span>
+    {#if ontoggleChanges}
+      <button class="hint-btn" onclick={ontoggleChanges} title="Toggle changed files">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+        Changes
+      </button>
+    {/if}
     {#if workspaceStore.active}
       <span class="hint ws">{workspaceStore.active.name}</span>
     {/if}
@@ -922,6 +935,10 @@
     background: #c678dd; color: #1e2127; cursor: pointer;
   }
   .send-btn.active:hover { background: #d19eee; }
+  .send-btn.abort {
+    background: #e06c75; color: #1e2127; cursor: pointer;
+  }
+  .send-btn.abort:hover { background: #e88990; }
 
   /* ── Slash command menu ── */
   .slash-menu {
@@ -1023,6 +1040,16 @@
     background: #2c313a; padding: 1px 4px; border-radius: 3px;
     border: 1px solid #3e4451;
   }
+  .hint-btn {
+    display: flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border: 1px solid #3e4451; border-radius: 5px;
+    background: transparent; color: #5c6370;
+    font-size: 10px; cursor: pointer;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    transition: all 120ms ease;
+  }
+  .hint-btn:hover { border-color: #5c6370; color: #abb2bf; background: #2c313a; }
+
   .hint.ws {
     margin-left: auto;
     color: #4b5263;

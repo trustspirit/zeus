@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e2127"/>
+      <stop offset="100%" stop-color="#282c34"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="30%" y1="0%" x2="70%" y2="100%">
+      <stop offset="0%" stop-color="#e5c07b"/>
+      <stop offset="50%" stop-color="#c678dd"/>
+      <stop offset="100%" stop-color="#61afef"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+  <!-- Rounded square background -->
+  <rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <!-- Subtle border -->
+  <rect x="4" y="4" width="1016" height="1016" rx="224" fill="none" stroke="#3e4451" stroke-width="8"/>
+  <!-- Inner glow ring -->
+  <rect x="40" y="40" width="944" height="944" rx="196" fill="none" stroke="rgba(198,120,221,0.08)" stroke-width="2"/>
+  <!-- Zeus lightning bolt - centered, bold, modern -->
+  <g filter="url(#glow)">
+    <path d="M 560 160 L 340 520 L 480 520 L 440 864 L 700 440 L 540 440 L 600 160 Z"
+          fill="url(#bolt)" opacity="0.95"/>
+  </g>
+  <!-- Small accent dot bottom-right -->
+  <circle cx="760" cy="800" r="24" fill="#c678dd" opacity="0.6"/>
+  <!-- Z letter subtle watermark at bottom -->
+</svg>
