@@ -4,6 +4,7 @@
   import { terminalStore } from '../stores/terminal.svelte.js'
   import { claudeStore } from '../stores/claude.svelte.js'
   import { uiStore } from '../stores/ui.svelte.js'
+  import { markdownStore } from '../stores/markdown.svelte.js'
   import IconPlus from './icons/IconPlus.svelte'
   import IconRefresh from './icons/IconRefresh.svelte'
   import IconBolt from './icons/IconBolt.svelte'
@@ -18,8 +19,12 @@
 
   // ── Workspace dropdown ──
   let dropdownOpen = $state(false)
+  let renamingWsPath = $state<string | null>(null)
+  let renameValue = $state('')
+  let renameInputEl = $state<HTMLInputElement | null>(null)
 
   function selectWorkspace(ws: typeof workspaceStore.list[0]) {
+    if (renamingWsPath) return // don't close while renaming
     dropdownOpen = false
     workspaceStore.select(ws)
   }
@@ -29,11 +34,51 @@
     workspaceStore.add()
   }
 
+  function startRename(ws: typeof workspaceStore.list[0], e?: MouseEvent) {
+    e?.stopPropagation()
+    renamingWsPath = ws.path
+    renameValue = ws.name
+    requestAnimationFrame(() => {
+      renameInputEl?.focus()
+      renameInputEl?.select()
+    })
+  }
+
+  async function confirmRename() {
+    if (renamingWsPath && renameValue.trim()) {
+      await workspaceStore.rename(renamingWsPath, renameValue.trim())
+    }
+    renamingWsPath = null
+    renameValue = ''
+  }
+
+  function cancelRename() {
+    renamingWsPath = null
+    renameValue = ''
+  }
+
+  function handleRenameKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') { e.preventDefault(); confirmRename() }
+    else if (e.key === 'Escape') { e.preventDefault(); cancelRename() }
+  }
+
+  async function removeWorkspace(wsPath: string, e?: MouseEvent) {
+    e?.stopPropagation()
+    claudeSessionStore.removeWorkspace(wsPath)
+    terminalStore.removeWorkspace(wsPath)
+    markdownStore.removeWorkspace(wsPath)
+    workspaceStore.remove(wsPath)
+    if (workspaceStore.list.length === 0) {
+      dropdownOpen = false
+    }
+  }
+
   // Close dropdown on outside click
   function handleWindowClick(e: MouseEvent) {
     const target = e.target as HTMLElement
     if (!target.closest('.ws-dropdown')) {
       dropdownOpen = false
+      if (renamingWsPath) cancelRename()
     }
   }
 
@@ -84,21 +129,46 @@
       {#if dropdownOpen}
         <div class="ws-menu">
           {#each workspaceStore.list as ws (ws.path)}
-            <button
-              class="ws-menu-item"
-              class:active={workspaceStore.active?.path === ws.path}
-              onclick={() => selectWorkspace(ws)}
-              oncontextmenu={(e) => handleWsContext(e, ws.path)}
-            >
-              <div class="ws-menu-icon" class:active={workspaceStore.active?.path === ws.path}>{ws.name.charAt(0)}</div>
-              <div class="ws-menu-info">
-                <span class="ws-menu-name">{ws.name}</span>
-                <span class="ws-menu-path">{ws.path.replace(/^\/Users\/[^/]+/, '~')}</span>
+            {#if renamingWsPath === ws.path}
+              <!-- Rename input -->
+              <div class="ws-menu-item rename-row">
+                <div class="ws-menu-icon" class:active={workspaceStore.active?.path === ws.path}>{renameValue.charAt(0) || '?'}</div>
+                <input
+                  bind:this={renameInputEl}
+                  bind:value={renameValue}
+                  class="ws-rename-input"
+                  onkeydown={handleRenameKeydown}
+                  onblur={confirmRename}
+                  spellcheck="false"
+                />
               </div>
-              {#if workspaceStore.active?.path === ws.path}
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c4a0ff" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              {/if}
-            </button>
+            {:else}
+              <div
+                class="ws-menu-item"
+                class:active={workspaceStore.active?.path === ws.path}
+                role="button"
+                tabindex="0"
+                onclick={() => selectWorkspace(ws)}
+                oncontextmenu={(e) => handleWsContext(e, ws.path)}
+              >
+                <div class="ws-menu-icon" class:active={workspaceStore.active?.path === ws.path}>{ws.name.charAt(0)}</div>
+                <div class="ws-menu-info">
+                  <span class="ws-menu-name">{ws.name}</span>
+                  <span class="ws-menu-path">{ws.path.replace(/^\/Users\/[^/]+/, '~')}</span>
+                </div>
+                <div class="ws-item-actions">
+                  {#if workspaceStore.active?.path === ws.path}
+                    <svg class="ws-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c4a0ff" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                  {/if}
+                  <button class="ws-action-btn" title="Rename" onclick={(e) => startRename(ws, e)}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                  </button>
+                  <button class="ws-action-btn ws-delete-btn" title="Remove workspace" onclick={(e) => removeWorkspace(ws.path, e)}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>
+            {/if}
           {/each}
           <div class="ws-menu-divider"></div>
           <button class="ws-menu-item add-item" onclick={handleAddWorkspace}>
@@ -282,6 +352,32 @@
     display: block; font-size: 10px; color: #5c6370; margin-top: 1px;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* ── Workspace item actions (rename/delete) ── */
+  .ws-item-actions {
+    display: flex; align-items: center; gap: 2px;
+    opacity: 0; transition: opacity 100ms ease; flex-shrink: 0;
+  }
+  .ws-menu-item:hover .ws-item-actions { opacity: 1; }
+  .ws-check { flex-shrink: 0; }
+  .ws-action-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border: none; border-radius: 4px;
+    background: transparent; color: #5c6370; cursor: pointer;
+    padding: 0; transition: all 100ms ease;
+  }
+  .ws-action-btn:hover { background: #3e4451; color: #abb2bf; }
+  .ws-delete-btn:hover { background: rgba(224, 108, 117, 0.12); color: #e06c75; }
+
+  /* ── Rename input ── */
+  .ws-menu-item.rename-row { cursor: default; }
+  .ws-menu-item.rename-row:hover { background: transparent; }
+  .ws-rename-input {
+    flex: 1; min-width: 0; padding: 4px 8px;
+    background: #1e2127; border: 1px solid #c678dd; border-radius: 4px;
+    color: #abb2bf; font-size: 12px; font-weight: 500;
+    font-family: inherit; outline: none;
   }
 
   .ws-menu-divider { height: 1px; background: #3e4451; margin: 4px 8px; }

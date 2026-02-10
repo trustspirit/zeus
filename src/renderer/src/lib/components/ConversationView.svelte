@@ -3,6 +3,7 @@
   import { marked } from 'marked'
   import DOMPurify from 'dompurify'
   import { claudeSessionStore } from '../stores/claude-session.svelte.js'
+  import { skillsStore } from '../stores/skills.svelte.js'
   import { uiStore } from '../stores/ui.svelte.js'
   import InputBar from './InputBar.svelte'
   import ChangedFilesPanel from './ChangedFilesPanel.svelte'
@@ -57,6 +58,30 @@
     }
   })
 
+  // Subagent elapsed time ticker (updates every second)
+  let elapsedTick = $state(0)
+  let elapsedTimer: ReturnType<typeof setInterval> | null = null
+  $effect(() => {
+    if (conv?.activeSubagent) {
+      if (!elapsedTimer) {
+        elapsedTimer = setInterval(() => { elapsedTick++ }, 1000)
+      }
+    } else {
+      if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null }
+      elapsedTick = 0
+    }
+    return () => { if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null } }
+  })
+
+  function formatElapsed(startedAt: number): string {
+    void elapsedTick // reactive dependency
+    const secs = Math.round((Date.now() - startedAt) / 1000)
+    if (secs < 60) return `${secs}s`
+    const mins = Math.floor(secs / 60)
+    const rem = secs % 60
+    return `${mins}m ${rem}s`
+  }
+
   // [P2] Auto-scroll with rAF throttle
   let scrollPending = false
   $effect(() => {
@@ -93,7 +118,7 @@
     if (cached) return cached
     try {
       const raw = marked.parse(text, { async: false }) as string
-      const html = DOMPurify.sanitize(raw, { ADD_TAGS: ['details', 'summary'] })
+      const html = DOMPurify.sanitize(raw, { ADD_TAGS: ['details', 'summary'], ADD_ATTR: ['style'] })
       if (mdCache.size >= MD_CACHE_MAX) {
         const firstKey = mdCache.keys().next().value
         if (firstKey !== undefined) mdCache.delete(firstKey)
@@ -118,16 +143,84 @@
     return keys.map((k) => `${k}: ${JSON.stringify(input[k]).slice(0, 60)}`).join(', ')
   }
 
+  /** Check if a tool name is a subagent */
+  function isSubagent(name: string): boolean {
+    return name === 'Task' || name.startsWith('dispatch_agent') || name === 'Agents'
+  }
+
+  /** Named color keywords → hex (matches Claude Code's agent color palette) */
+  const AGENT_COLOR_MAP: Record<string, string> = {
+    blue: '#61afef', purple: '#c678dd', green: '#98c379', yellow: '#e5c07b',
+    cyan: '#56b6c2', orange: '#d19a66', red: '#e06c75', pink: '#e06c95',
+    magenta: '#c678dd', teal: '#56b6c2', lime: '#a9dc76', indigo: '#7c8cf5',
+    brown: '#be5046', white: '#abb2bf', gray: '#7f848e', grey: '#7f848e',
+  }
+  const SA_COLORS = [...new Set(Object.values(AGENT_COLOR_MAP))]
+
+  /** Look up an agent's color from customSkills frontmatter, then hash fallback */
+  function saColor(agentName: string): string {
+    const normalized = agentName.toLowerCase().replace(/-/g, '_')
+    for (const skill of skillsStore.customSkills) {
+      if (skill.kind !== 'agent') continue
+      const skillNorm = skill.name.toLowerCase().replace(/-/g, '_')
+      if (skillNorm === normalized || skillNorm.endsWith(normalized) || normalized.endsWith(skillNorm)) {
+        if (skill.color) return AGENT_COLOR_MAP[skill.color.toLowerCase()] ?? skill.color
+      }
+    }
+    // Hash fallback
+    let h = 0
+    for (let i = 0; i < agentName.length; i++) h = ((h << 5) - h + agentName.charCodeAt(i)) | 0
+    return SA_COLORS[Math.abs(h) % SA_COLORS.length]
+  }
+  /** Derive readable agent name from tool name + input */
+  function deriveAgentName(toolName: string, input?: Record<string, unknown>): string {
+    if (toolName.startsWith('dispatch_agent_')) return toolName.slice('dispatch_agent_'.length).replace(/_/g, '-')
+    if (input) {
+      if (typeof input.agent_name === 'string' && input.agent_name) return input.agent_name.replace(/_/g, '-')
+      if (typeof input.name === 'string' && input.name) return input.name.replace(/_/g, '-')
+    }
+    const desc = (input?.description || input?.prompt || '') as string
+    if (desc) {
+      const m = desc.match(/^([a-z][a-z0-9_-]{2,30})(?:\s|:|$)/i)
+      if (m) return m[1].toLowerCase().replace(/_/g, '-')
+      const words = desc.split(/\s+/).slice(0, 3).join(' ')
+      return words.length > 30 ? words.slice(0, 30) + '…' : words
+    }
+    return 'Subagent'
+  }
+
   function renderBlocks(blocks: ContentBlock[]): string {
     const parts: string[] = []
+    let inSubagent = false
     for (const block of blocks) {
       switch (block.type) {
         case 'text':
-          if (block.text) parts.push(block.text)
+          if (block.text) {
+            if (inSubagent) {
+              parts.push(`> ${block.text.split('\n').join('\n> ')}`)
+              inSubagent = false
+            } else {
+              parts.push(block.text)
+            }
+          }
           break
-        case 'tool_use':
-          parts.push(`\n\`\`\`tool\n▶ ${formatToolName(block.name ?? 'Tool')}${block.input ? `  ${formatToolInput(block.input)}` : ''}\n\`\`\`\n`)
+        case 'tool_use': {
+          const name = block.name ?? 'Tool'
+          if (isSubagent(name)) {
+            const agentName = deriveAgentName(name, block.input)
+            const color = saColor(agentName)
+            const desc = block.input?.description || block.input?.prompt
+            const descText = typeof desc === 'string'
+              ? (desc.length > 120 ? desc.slice(0, 120) + '…' : desc)
+              : ''
+            parts.push(`\n---\n<span style="color:${color}">**⦿ ${agentName}**</span> ${descText ? `— ${descText}` : ''}\n`)
+            inSubagent = true
+          } else {
+            const prefix = inSubagent ? '> ' : ''
+            parts.push(`\n${prefix}\`\`\`tool\n${prefix}▶ ${formatToolName(name)}${block.input ? `  ${formatToolInput(block.input)}` : ''}\n${prefix}\`\`\`\n`)
+          }
           break
+        }
         case 'tool_result':
           if (block.content) {
             const content = block.content.length > 500 ? block.content.slice(0, 500) + '…' : block.content
@@ -202,6 +295,27 @@
           </div>
         {/each}
 
+        <!-- ── Quick replies: shown after the last assistant message asks a numbered question ── -->
+        {#if !conv.isStreaming && conv.quickReplies && conv.quickReplies.length > 0}
+          <div class="quick-replies">
+            <div class="quick-replies-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Choose an option
+            </div>
+            <div class="quick-replies-grid">
+              {#each conv.quickReplies as reply (reply.value)}
+                <button
+                  class="quick-reply-btn"
+                  onclick={() => claudeSessionStore.send(conv.id, reply.value)}
+                >
+                  <span class="quick-reply-num">{reply.value}</span>
+                  <span class="quick-reply-label">{reply.label}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
         <!-- ── Streaming ── -->
         {#if conv.isStreaming}
           <div class="msg assistant streaming">
@@ -238,8 +352,9 @@
                         {/if}
                       </div>
                     {/if}
-                    <div class="prompt-actions">
-                      {#if conv.pendingPrompt.options.length > 0}
+                    <!-- Quick-select buttons (shown when options are available) -->
+                    {#if conv.pendingPrompt.options.length > 0}
+                      <div class="prompt-actions">
                         {#each conv.pendingPrompt.options as opt (opt.value)}
                           <button
                             class="prompt-btn"
@@ -262,30 +377,51 @@
                             {/if}
                           </button>
                         {/each}
-                      {:else}
-                        <!-- Free text input for 'input' type prompts -->
-                        <form class="prompt-input-form" onsubmit={(e) => {
-                          e.preventDefault()
-                          const form = e.currentTarget as HTMLFormElement
-                          const input = form.querySelector('input') as HTMLInputElement
-                          if (input.value.trim()) {
-                            claudeSessionStore.respond(conv.id, input.value.trim())
-                            input.value = ''
-                          }
-                        }}>
-                          <input
-                            class="prompt-text-input"
-                            type="text"
-                            placeholder="Type your response…"
-                            autofocus
-                          />
-                          <button class="prompt-btn prompt-yes" type="submit">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                            Send
-                          </button>
-                        </form>
-                      {/if}
+                      </div>
+                    {/if}
+                    <!-- Free text input — always shown so the user can type a custom response -->
+                    <form class="prompt-input-form" onsubmit={(e) => {
+                      e.preventDefault()
+                      const form = e.currentTarget as HTMLFormElement
+                      const input = form.querySelector('input') as HTMLInputElement
+                      if (input.value.trim()) {
+                        claudeSessionStore.respond(conv.id, input.value.trim())
+                        input.value = ''
+                      }
+                    }}>
+                      <input
+                        class="prompt-text-input"
+                        type="text"
+                        placeholder={conv.pendingPrompt.options.length > 0 ? 'Or type a custom response…' : 'Type your response…'}
+                        autofocus
+                      />
+                      <button class="prompt-btn prompt-yes" type="submit">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                        Send
+                      </button>
+                    </form>
+                  </div>
+                {:else if conv.activeSubagent}
+                  <!-- Subagent panel: shown when Task tool is running -->
+                  {@const sa = conv.activeSubagent}
+                  <div class="subagent-panel" style="border-color: {sa.color}33; background: linear-gradient(135deg, {sa.color}0a, {sa.color}06);">
+                    <div class="subagent-header">
+                      <span class="subagent-dot" style="background: {sa.color};"></span>
+                      <span class="subagent-name" style="color: {sa.color};">{sa.name}</span>
+                      <span class="subagent-elapsed">{formatElapsed(sa.startedAt)}</span>
                     </div>
+                    <div class="subagent-desc">{sa.description}</div>
+                    <div class="subagent-activity">
+                      <span class="subagent-pulse" style="background: {sa.color};"></span>
+                      <span class="subagent-status">{sa.nestedStatus || 'Working…'}</span>
+                    </div>
+                    {#if sa.toolsUsed.length > 0}
+                      <div class="subagent-tools">
+                        {#each sa.toolsUsed as tool (tool)}
+                          <span class="subagent-tool-chip" style="border-color: {sa.color}26; background: {sa.color}0d;">{tool}</span>
+                        {/each}
+                      </div>
+                    {/if}
                   </div>
                 {:else}
                   <!-- Status line: always visible during streaming -->
@@ -445,6 +581,56 @@
   }
   .status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 500px; }
 
+  /* ── Subagent Panel ──────────────────────────────────────────────────── */
+  .subagent-panel {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 10px 12px; margin-top: 8px;
+    border: 1px solid; border-radius: 10px;
+    animation: status-fade-in 200ms ease;
+  }
+  .subagent-header {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600;
+  }
+  .subagent-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    animation: pulse-ring 1.5s ease-in-out infinite;
+  }
+  .subagent-name {
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    font-size: 13px; font-weight: 700; letter-spacing: -0.01em;
+  }
+  .subagent-elapsed {
+    margin-left: auto; font-size: 10px; color: #5c6370;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace; font-weight: 400;
+  }
+  .subagent-desc {
+    font-size: 12px; color: #abb2bf; line-height: 1.5;
+    max-height: 60px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .subagent-activity {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: #7f848e;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+  }
+  .subagent-pulse {
+    width: 6px; height: 6px; border-radius: 50%;
+    flex-shrink: 0;
+    animation: pulse-ring 1.5s ease-in-out infinite;
+  }
+  .subagent-status {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .subagent-tools {
+    display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px;
+  }
+  .subagent-tool-chip {
+    display: inline-block; padding: 1px 6px;
+    border: 1px solid; border-radius: 4px;
+    font-size: 10px; color: #7f848e;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+  }
+
   /* ── Prompt UI ─────────────────────────────────────────────────────────── */
   .prompt-ui {
     display: flex; flex-direction: column; gap: 8px;
@@ -519,5 +705,44 @@
     border-radius: 3px; font-size: 10px; color: #7f848e;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
     line-height: 1.4; vertical-align: middle;
+  }
+
+  /* ── Quick Replies ──────────────────────────────────────────────────── */
+  .quick-replies {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 12px 0; margin-left: 40px;
+    animation: status-fade-in 200ms ease;
+  }
+  .quick-replies-label {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 600; color: #5c6370;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .quick-replies-grid {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .quick-reply-btn {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px; border: 1px solid #3e4451; border-radius: 8px;
+    background: #2c313a; color: #abb2bf; font-size: 13px;
+    font-family: 'Pretendard Variable', Pretendard, -apple-system, sans-serif;
+    cursor: pointer; transition: all 120ms ease; text-align: left;
+    line-height: 1.4;
+  }
+  .quick-reply-btn:hover {
+    background: #363c48; border-color: #61afef; color: #e0e0e0;
+  }
+  .quick-reply-btn:active {
+    background: rgba(97, 175, 239, 0.12);
+  }
+  .quick-reply-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 22px; height: 22px; border-radius: 6px;
+    background: rgba(97, 175, 239, 0.12); color: #61afef;
+    font-size: 12px; font-weight: 600; flex-shrink: 0;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+  }
+  .quick-reply-label {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
 </style>

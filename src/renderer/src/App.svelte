@@ -194,6 +194,14 @@
       case 'reveal-finder':
         window.zeus.system.revealInFinder(wsPath)
         break
+      case 'rename':
+        if (ws) {
+          const newName = prompt('Rename workspace:', ws.name)
+          if (newName !== null && newName.trim()) {
+            workspaceStore.rename(wsPath, newName.trim())
+          }
+        }
+        break
       case 'remove':
         // Clean up all workspace-scoped resources before removing
         claudeSessionStore.removeWorkspace(wsPath)

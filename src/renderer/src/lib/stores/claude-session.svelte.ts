@@ -1,5 +1,6 @@
-import type { ClaudeConversation, ClaudeMessage, ContentBlock, ClaudeStreamEvent, SavedSession, PendingPrompt } from '../types/index.js'
+import type { ClaudeConversation, ClaudeMessage, ContentBlock, ClaudeStreamEvent, SavedSession, PendingPrompt, SubagentInfo, QuickReply } from '../types/index.js'
 import { uiStore } from './ui.svelte.js'
+import { skillsStore } from './skills.svelte.js'
 
 // ── Claude Session Store (headless -p mode) ──────────────────────────────────
 
@@ -74,9 +75,150 @@ function formatToolLabel(name: string): string {
     MultiEdit: 'Editing file', Bash: 'Running command', Glob: 'Finding files',
     Grep: 'Searching', LS: 'Listing directory', Browser: 'Browsing',
     NotebookEdit: 'Editing notebook', TodoRead: 'Reading tasks',
-    TodoWrite: 'Updating tasks', Task: 'Running task'
+    TodoWrite: 'Updating tasks', Task: 'Running subagent'
   }
   return map[name] || name
+}
+
+/** Check if a tool name is a subagent Task */
+function isSubagentTool(name: string): boolean {
+  return name === 'Task' || name.startsWith('dispatch_agent') || name === 'Agents'
+}
+
+/** Named color keywords → hex (matches Claude Code's agent color palette) */
+const AGENT_COLOR_MAP: Record<string, string> = {
+  blue: '#61afef',
+  purple: '#c678dd',
+  green: '#98c379',
+  yellow: '#e5c07b',
+  cyan: '#56b6c2',
+  orange: '#d19a66',
+  red: '#e06c75',
+  pink: '#e06c95',
+  magenta: '#c678dd',
+  teal: '#56b6c2',
+  lime: '#a9dc76',
+  indigo: '#7c8cf5',
+  brown: '#be5046',
+  white: '#abb2bf',
+  gray: '#7f848e',
+  grey: '#7f848e',
+}
+
+/** Fallback palette for hash-based assignment */
+const SUBAGENT_COLORS = Object.values(AGENT_COLOR_MAP).filter((v, i, a) => a.indexOf(v) === i)
+
+/** Resolve a named color keyword to hex */
+function resolveColorKeyword(keyword: string): string | null {
+  return AGENT_COLOR_MAP[keyword.toLowerCase()] ?? null
+}
+
+/** Deterministic fallback color from a string name */
+function colorForName(name: string): string {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) {
+    hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0
+  }
+  return SUBAGENT_COLORS[Math.abs(hash) % SUBAGENT_COLORS.length]
+}
+
+/**
+ * Look up an agent's defined color from customSkills (parsed from .md frontmatter).
+ * Returns hex color or null if not found.
+ */
+function lookupAgentColor(agentName: string): string | null {
+  const normalized = agentName.toLowerCase().replace(/-/g, '_')
+  for (const skill of skillsStore.customSkills) {
+    if (skill.kind !== 'agent') continue
+    const skillNorm = skill.name.toLowerCase().replace(/-/g, '_')
+    if (skillNorm === normalized || skillNorm.endsWith(normalized) || normalized.endsWith(skillNorm)) {
+      if (skill.color) return resolveColorKeyword(skill.color) ?? skill.color
+    }
+  }
+  return null
+}
+
+/** Resolve color for a subagent: agent-defined → hash-based fallback */
+function resolveAgentColor(agentName: string): string {
+  return lookupAgentColor(agentName) ?? colorForName(agentName)
+}
+
+/** Extract a human-readable agent name from the tool name and/or input */
+function extractSubagentName(toolName: string, input: Record<string, unknown>): string {
+  // dispatch_agent_frontend_architect → "frontend-architect"
+  if (toolName.startsWith('dispatch_agent_')) {
+    return toolName.slice('dispatch_agent_'.length).replace(/_/g, '-')
+  }
+  // Agents tool — input may carry agent_name or name
+  if (typeof input.agent_name === 'string' && input.agent_name) {
+    return input.agent_name.replace(/_/g, '-')
+  }
+  if (typeof input.name === 'string' && input.name) {
+    return input.name.replace(/_/g, '-')
+  }
+  // Task tool — try to derive a short name from description/prompt
+  const desc = (typeof input.description === 'string' && input.description)
+    || (typeof input.prompt === 'string' && input.prompt)
+    || (typeof input.task_description === 'string' && input.task_description as string)
+    || ''
+  if (desc) {
+    // If the description looks like an agent name pattern (kebab-case or snake_case, short)
+    const nameMatch = desc.match(/^([a-z][a-z0-9_-]{2,30})(?:\s|:|$)/i)
+    if (nameMatch) return nameMatch[1].toLowerCase().replace(/_/g, '-')
+    // Otherwise, use the first few meaningful words
+    const words = desc.split(/\s+/).slice(0, 3).join(' ')
+    return words.length > 30 ? words.slice(0, 30) + '…' : words
+  }
+  return 'Subagent'
+}
+
+/** Extract subagent description from tool input */
+function extractSubagentDesc(input: Record<string, unknown>): string {
+  if (typeof input.description === 'string' && input.description) return input.description
+  if (typeof input.prompt === 'string' && input.prompt) {
+    return input.prompt.length > 80 ? input.prompt.slice(0, 80) + '…' : input.prompt
+  }
+  if (typeof input.task_description === 'string') return input.task_description
+  return 'Subagent'
+}
+
+/**
+ * Detect numbered-choice questions in the last assistant message.
+ * Matches patterns like "1) Option A\n2) Option B" or "1. Option A\n2. Option B"
+ * Returns quick-reply options if the choices appear near the end of the text.
+ */
+function detectQuickReplies(messages: ClaudeMessage[]): QuickReply[] {
+  if (messages.length === 0) return []
+  const lastMsg = messages[messages.length - 1]
+  if (lastMsg.role !== 'assistant') return []
+
+  const text = lastMsg.content
+  const lines = text.split('\n')
+
+  // Find numbered-choice lines: "1) ...", "2. ...", "  3) ...", etc.
+  const choiceIndices: number[] = []
+  const choices: QuickReply[] = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\s*(\d+)[.)]\s+(.+)$/)
+    if (m) {
+      choiceIndices.push(i)
+      choices.push({ label: m[2].trim(), value: m[1] })
+    }
+  }
+
+  // Must have 2+ choices and they should appear near the end of the message
+  // (not random numbered lists in the middle of a long explanation)
+  if (choices.length >= 2 && choiceIndices.length >= 2) {
+    const lastChoiceLine = choiceIndices[choiceIndices.length - 1]
+    // Choices should be within the last ~10 lines (allowing a few trailing lines after)
+    const trailingLines = lines.length - 1 - lastChoiceLine
+    if (trailingLines <= 5) {
+      return choices
+    }
+  }
+
+  return []
 }
 
 /** Per-workspace snapshot of Claude tab state */
@@ -188,7 +330,9 @@ class ClaudeSessionStore {
       streamingContent: '',
       streamingBlocks: [],
       streamingStatus: '',
-      pendingPrompt: null
+      pendingPrompt: null,
+      activeSubagent: null,
+      quickReplies: []
     }
 
     this.conversations = [...this.conversations, conversation]
@@ -238,7 +382,9 @@ class ClaudeSessionStore {
       streamingContent: '',
       streamingBlocks: [],
       streamingStatus: '',
-      pendingPrompt: null
+      pendingPrompt: null,
+      activeSubagent: null,
+      quickReplies: []
     }
 
     this.conversations = [...this.conversations, conversation]
@@ -258,8 +404,9 @@ class ClaudeSessionStore {
   }
 
   /** Send a user message and start streaming response.
-   *  If already streaming, finalize current response and send immediately (Claude Code handles --resume). */
-  async send(id: string, prompt: string): Promise<void> {
+   *  If already streaming, finalize current response and send immediately (Claude Code handles --resume).
+   *  @param displayContent — optional shorter text shown in the UI (e.g. skill name) while the full prompt goes to Claude */
+  async send(id: string, prompt: string, displayContent?: string): Promise<void> {
     const conv = this.conversations.find((c) => c.id === id)
     if (!conv) return
 
@@ -283,13 +430,17 @@ class ClaudeSessionStore {
       conv.streamingBlocks = []
       conv.streamingStatus = ''
       conv.pendingPrompt = null
+      conv.activeSubagent = null
     }
 
-    // Add user message
+    // Clear quick replies from previous turn
+    conv.quickReplies = []
+
+    // Add user message (show displayContent in UI if provided, otherwise the full prompt)
     const userMsg: ClaudeMessage = {
       id: `msg-${Date.now()}-user`,
       role: 'user',
-      content: prompt,
+      content: displayContent ?? prompt,
       timestamp: Date.now()
     }
 
@@ -327,6 +478,8 @@ class ClaudeSessionStore {
       conv.streamingBlocks = []
       conv.streamingStatus = ''
       conv.pendingPrompt = null
+      conv.activeSubagent = null
+      conv.quickReplies = []
     }
 
     // [B1] Clean up main process session entry
@@ -346,16 +499,32 @@ class ClaudeSessionStore {
     }
   }
 
-  /** Respond to a pending prompt (permission, option selection, etc.) */
+  /** Respond to a pending prompt (permission, option selection, etc.)
+   *  Primary path: writes the response to the still-open stdin (process stays alive).
+   *  Fallback: if stdin is unavailable, aborts and re-spawns with --resume. */
   async respond(id: string, response: string): Promise<void> {
     const conv = this.conversations.find((c) => c.id === id)
     if (!conv?.pendingPrompt) return
 
+    const prompt = conv.pendingPrompt
     conv.pendingPrompt = null
-    conv.streamingStatus = 'Processing…'
+    conv.streamingStatus = 'Responding…'
     this.conversations = [...this.conversations]
 
-    await window.zeus.claudeSession.respond(id, response)
+    // Main process writes to stdin or falls back to abort+resume
+    const ok = await window.zeus.claudeSession.respond(id, response)
+    if (!ok) {
+      conv.streamingStatus = ''
+      conv.isStreaming = false
+      const errMsg: ClaudeMessage = {
+        id: `msg-${Date.now()}-error`,
+        role: 'assistant',
+        content: `⚠️ Failed to respond to prompt: ${prompt.message}`,
+        timestamp: Date.now()
+      }
+      conv.messages = [...conv.messages, errMsg]
+      this.conversations = [...this.conversations]
+    }
   }
 
   /** Abort the currently streaming response. */
@@ -366,6 +535,7 @@ class ClaudeSessionStore {
       conv.isStreaming = false
       conv.streamingStatus = ''
       conv.pendingPrompt = null
+      conv.activeSubagent = null
       this.conversations = [...this.conversations]
     }
   }
@@ -450,15 +620,70 @@ class ClaudeSessionStore {
       conv.streamingBlocks = blocks
       this._updateStatusFromBlocks(conv, blocks, text)
 
+      // Detect subagent (Task) tool_use in the blocks
+      const taskBlock = blocks.find((b) => b.type === 'tool_use' && b.name && isSubagentTool(b.name))
+      if (taskBlock && taskBlock.input) {
+        if (!conv.activeSubagent) {
+          const agentName = extractSubagentName(taskBlock.name!, taskBlock.input)
+          conv.activeSubagent = {
+            name: agentName,
+            color: resolveAgentColor(agentName),
+            description: extractSubagentDesc(taskBlock.input),
+            nestedStatus: 'Starting…',
+            toolsUsed: [],
+            startedAt: Date.now()
+          }
+        }
+      }
+      // Detect subagent result (task finished): if we had a subagent and now see a tool_result after it
+      const lastTaskIdx = blocks.findLastIndex((b) => b.type === 'tool_use' && b.name && isSubagentTool(b.name))
+      if (lastTaskIdx >= 0 && conv.activeSubagent) {
+        const hasResultAfter = blocks.slice(lastTaskIdx + 1).some((b) => b.type === 'tool_result' || b.type === 'text')
+        if (hasResultAfter) {
+          conv.activeSubagent = null
+        }
+      }
+
     } else if (event.type === 'content_block_start') {
       // A new content block has started (text, tool_use, thinking)
       const cb = any.content_block as Record<string, unknown> | undefined
       if (cb?.type === 'tool_use' && typeof cb.name === 'string') {
         const input = (cb.input && typeof cb.input === 'object') ? cb.input as Record<string, unknown> : {}
-        conv.streamingStatus = this._formatToolStatus(cb.name, input)
+
+        if (isSubagentTool(cb.name)) {
+          // Subagent starting
+          const agentName = extractSubagentName(cb.name, input)
+          conv.activeSubagent = {
+            name: agentName,
+            color: resolveAgentColor(agentName),
+            description: extractSubagentDesc(input),
+            nestedStatus: 'Starting…',
+            toolsUsed: [],
+            startedAt: Date.now()
+          }
+          conv.streamingStatus = this._formatToolStatus(cb.name, input)
+        } else if (conv.activeSubagent) {
+          // Tool inside subagent — update nested status
+          conv.activeSubagent.nestedStatus = this._formatToolStatus(cb.name, input)
+          conv.activeSubagent.nestedToolName = cb.name
+          if (!conv.activeSubagent.toolsUsed.includes(cb.name)) {
+            conv.activeSubagent.toolsUsed = [...conv.activeSubagent.toolsUsed, cb.name]
+          }
+          conv.streamingStatus = this._formatToolStatus(cb.name, input)
+        } else {
+          conv.streamingStatus = this._formatToolStatus(cb.name, input)
+        }
       } else if (cb?.type === 'thinking') {
+        if (conv.activeSubagent) {
+          conv.activeSubagent.nestedStatus = 'Thinking…'
+          conv.activeSubagent.nestedToolName = undefined
+        }
         conv.streamingStatus = 'Thinking…'
       } else if (cb?.type === 'text') {
+        if (conv.activeSubagent) {
+          conv.activeSubagent.nestedStatus = 'Writing…'
+          conv.activeSubagent.nestedToolName = undefined
+        }
         conv.streamingStatus = 'Writing…'
       }
 
@@ -481,7 +706,7 @@ class ClaudeSessionStore {
 
     } else if (event.type === 'content_block_stop') {
       // Block finished — status will be updated by next block or result
-      conv.streamingStatus = 'Processing…'
+      conv.streamingStatus = conv.activeSubagent ? conv.activeSubagent.nestedStatus : 'Processing…'
 
     } else if (event.type === 'result') {
       // Final result — use result text if available
@@ -489,6 +714,7 @@ class ClaudeSessionStore {
         conv.streamingContent = event.result
       }
       conv.streamingStatus = ''
+      conv.activeSubagent = null
 
     } else if (event.type === 'system') {
       conv.streamingStatus = 'Initializing…'
@@ -566,6 +792,9 @@ class ClaudeSessionStore {
     conv.streamingBlocks = []
     conv.streamingStatus = ''
     conv.pendingPrompt = null
+
+    // Detect model-level questions with numbered choices for quick-reply UI
+    conv.quickReplies = detectQuickReplies(conv.messages)
 
     // Cap total messages to prevent unbounded growth
     if (conv.messages.length > MAX_MESSAGES) {

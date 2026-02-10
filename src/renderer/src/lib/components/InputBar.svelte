@@ -20,6 +20,7 @@
     command: string   // e.g. /project:deploy — sent to Claude
     label: string     // display name for the chip
     kind: 'command' | 'skill' | 'agent' | 'builtin'
+    filePath?: string // .md file path for custom skills (resolved on send)
   }
   let commandTag = $state<CommandTag | null>(null)
 
@@ -83,6 +84,12 @@
     }
   }
 
+  // ── Reload skills whenever the active workspace changes ──
+  $effect(() => {
+    const wsPath = workspaceStore.active?.path
+    skillsStore.load(wsPath)
+  })
+
   // ── Slash command autocomplete ──
   let slashMenuOpen = $state(false)
   let slashFilter = $state('')
@@ -95,6 +102,7 @@
     desc: string
     kind: 'command' | 'skill' | 'agent' | 'builtin'
     scope: 'user' | 'project' | 'system'
+    filePath?: string // absolute path to .md file (for custom skills)
   }
 
   /** Claude Code built-in slash commands */
@@ -123,15 +131,21 @@
 
   const allSlashItems = $derived.by((): SlashItem[] => {
     const items: SlashItem[] = []
-    // Custom user/project skills first
+    const wsPath = workspaceStore.active?.path
+    // Custom user/project skills — filter by current workspace scope
     for (const skill of skillsStore.customSkills) {
+      // Project-level skills: only show if they belong to the current workspace
+      if (skill.scope === 'project' && wsPath && !skill.filePath.startsWith(wsPath)) {
+        continue
+      }
       const cmd = skillsStore.getSlashCommand(skill)
       items.push({
         command: cmd,
         label: skill.name,
         desc: skill.content.slice(0, 80),
         kind: skill.kind,
-        scope: skill.scope
+        scope: skill.scope,
+        filePath: skill.filePath
       })
     }
     // Built-in commands after
@@ -166,7 +180,7 @@
 
   /** Select a slash item → set as tag chip, clear input text */
   function selectSlashItem(item: SlashItem) {
-    commandTag = { command: item.command, label: item.label, kind: item.kind }
+    commandTag = { command: item.command, label: item.label, kind: item.kind, filePath: item.filePath }
     inputValue = ''
     slashMenuOpen = false
     requestAnimationFrame(() => {
@@ -265,7 +279,7 @@
       if (trimmed.startsWith('/')) {
         const match = allSlashItems.find((i) => i.command === trimmed)
         if (match) {
-          commandTag = { command: match.command, label: match.label, kind: match.kind }
+          commandTag = { command: match.command, label: match.label, kind: match.kind, filePath: match.filePath }
         } else {
           // Unknown slash command — still show as tag
           const parts = trimmed.slice(1).split(':')
@@ -468,7 +482,56 @@
     terminalStore.sendInput(id, fullCmd)
   }
 
-  function send() {
+  /**
+   * Resolve a custom skill's .md content for sending to Claude Code.
+   * Tries multiple strategies: commandTag.filePath, store lookup by command, store lookup by label.
+   * Replaces $ARGUMENTS with user's additional text input.
+   */
+  async function resolveSkillContent(tag: CommandTag, userArgs: string): Promise<string | null> {
+    // Strategy 1: direct filePath from tag
+    // Strategy 2: lookup by command in skillsStore
+    // Strategy 3: lookup by label/name in skillsStore
+    const candidates: string[] = []
+    if (tag.filePath) candidates.push(tag.filePath)
+
+    const byCmd = skillsStore.customSkills.find(
+      (s) => skillsStore.getSlashCommand(s) === tag.command
+    )
+    if (byCmd?.filePath && !candidates.includes(byCmd.filePath)) {
+      candidates.push(byCmd.filePath)
+    }
+
+    const byName = skillsStore.customSkills.find(
+      (s) => s.name === tag.label || s.name === tag.command.replace(/^\/[^:]+:/, '')
+    )
+    if (byName?.filePath && !candidates.includes(byName.filePath)) {
+      candidates.push(byName.filePath)
+    }
+
+    // Try each candidate path
+    for (const fp of candidates) {
+      try {
+        const content = await window.zeus.files.read(fp)
+        if (content) {
+          // Strip YAML frontmatter (---\n...\n---) — it's metadata, not prompt content
+          // Claude Code CLI misinterprets leading "---" as an option flag
+          let body = content.replace(/^---\n[\s\S]*?\n---\n?/, '').trim()
+
+          // Replace $ARGUMENTS placeholder (used by Claude Code custom commands)
+          let resolved = body.replace(/\$ARGUMENTS/g, userArgs || '')
+          // If no $ARGUMENTS was present and there's user text, append it
+          if (!body.includes('$ARGUMENTS') && userArgs) {
+            resolved += '\n\n' + userArgs
+          }
+          return resolved.trim()
+        }
+      } catch { /* try next */ }
+    }
+
+    return null
+  }
+
+  async function send() {
     const text = inputValue.trim()
     if ((!text && !commandTag && attachedFiles.length === 0) || !claudeConv) return
     slashMenuOpen = false
@@ -488,11 +551,25 @@
 
     // Build the actual prompt
     let prompt = ''
+    let displayContent: string | undefined = undefined
 
-    // Prepend slash command if tag exists
-    if (commandTag) {
-      prompt = commandTag.command
-      if (text) prompt += ' ' + text
+    // Resolve custom skill: find the .md file, read its content, replace $ARGUMENTS
+    if (commandTag && commandTag.kind !== 'builtin') {
+      const resolved = await resolveSkillContent(commandTag, text)
+      if (resolved) {
+        prompt = resolved
+        // Show skill name + user instructions in UI, not the full .md content
+        displayContent = text
+          ? `${commandTag.command} ${text}`
+          : commandTag.command
+      } else if (commandTag.filePath) {
+        // filePath exists but read failed — send descriptive text prompt instead of slash command
+        prompt = text || `Run the skill: ${commandTag.label}`
+      } else {
+        // No filePath (e.g. typed slash command not in store) — send as text
+        prompt = commandTag.command
+        if (text) prompt += ' ' + text
+      }
     } else {
       prompt = text
     }
@@ -505,9 +582,14 @@
       } else {
         prompt = 'Please look at these files:\n' + fileRefs
       }
+      // Add file names to display content too
+      const fileNames = attachedFiles.map((f) => f.name).join(', ')
+      if (displayContent) {
+        displayContent += `\n📎 ${fileNames}`
+      }
     }
 
-    claudeSessionStore.send(claudeConv.id, prompt.trim())
+    claudeSessionStore.send(claudeConv.id, prompt.trim(), displayContent)
     inputValue = ''
     commandTag = null
     attachedFiles = []
@@ -527,7 +609,7 @@
       return
     }
 
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault()
       send()
       return
@@ -618,6 +700,7 @@
           >
             <span class="slash-cmd">{item.command}</span>
             <span class="slash-badge {kindClass(item.kind)}">{item.kind}</span>
+            <span class="slash-scope" class:scope-project={item.scope === 'project'} class:scope-user={item.scope === 'user'}>{item.scope === 'project' ? 'project' : 'user'}</span>
             {#if item.desc}
               <span class="slash-desc">{item.desc}</span>
             {/if}
@@ -1015,6 +1098,18 @@
   .slash-badge.kind-skill { background: rgba(122, 190, 117, 0.12); color: #7abe75; }
   .slash-badge.kind-agent { background: rgba(210, 150, 100, 0.12); color: #d0966a; }
   .slash-badge.kind-builtin { background: rgba(160, 160, 180, 0.1); color: #a0a0b0; }
+
+  .slash-scope {
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+  .slash-scope.scope-project { background: rgba(97, 175, 239, 0.1); color: #61afef; }
+  .slash-scope.scope-user { background: rgba(160, 160, 180, 0.08); color: #5c6370; }
 
   .slash-desc {
     font-size: 11px;

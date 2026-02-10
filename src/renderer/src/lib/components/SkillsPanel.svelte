@@ -8,6 +8,55 @@
   /** Track collapsed groups */
   let collapsedGroups = $state<Set<string>>(new Set())
 
+  /** Filter query for searching skills */
+  let filterQuery = $state('')
+  let filterInputEl = $state<HTMLInputElement | undefined>(undefined)
+
+  function matchesFilter(text: string): boolean {
+    if (!filterQuery) return true
+    return text.toLowerCase().includes(filterQuery.toLowerCase())
+  }
+
+  function filterSkills(skills: CustomSkill[]): CustomSkill[] {
+    if (!filterQuery) return skills
+    return skills.filter((s) =>
+      matchesFilter(s.name) || matchesFilter(s.content) || matchesFilter(s.filePath)
+    )
+  }
+
+  function filterGrouped(grouped: Map<string, CustomSkill[]>): Map<string, CustomSkill[]> {
+    if (!filterQuery) return grouped
+    const result = new Map<string, CustomSkill[]>()
+    for (const [key, skills] of grouped) {
+      const filtered = filterSkills(skills)
+      if (filtered.length > 0) result.set(key, filtered)
+    }
+    return result
+  }
+
+  // Filtered counts for section visibility
+  const filteredProjectSkills = $derived(filterSkills(skillsStore.projectSkills))
+  const filteredProjectAgents = $derived(filterSkills(skillsStore.projectAgents))
+  const filteredProjectCommands = $derived(filterSkills(skillsStore.projectCommands))
+  const filteredUserSkills = $derived(filterSkills(skillsStore.userSkills))
+  const filteredUserAgents = $derived(filterSkills(skillsStore.userAgents))
+  const filteredUserCommands = $derived(filterSkills(skillsStore.userCommands))
+  const filteredBuiltinSkills = $derived(
+    filterQuery
+      ? skillsStore.builtinSkills.filter((s) => matchesFilter(s.name) || matchesFilter(s.description))
+      : skillsStore.builtinSkills
+  )
+  const filteredMcpSkills = $derived(
+    filterQuery
+      ? skillsStore.mcpSkills.filter((s) => matchesFilter(s.name) || matchesFilter(s.description))
+      : skillsStore.mcpSkills
+  )
+  const totalFiltered = $derived(
+    filteredProjectSkills.length + filteredProjectAgents.length + filteredProjectCommands.length +
+    filteredUserSkills.length + filteredUserAgents.length + filteredUserCommands.length +
+    filteredBuiltinSkills.length + filteredMcpSkills.length
+  )
+
   $effect(() => {
     // Reload when workspace or scope changes
     const ws = workspaceStore.active
@@ -77,6 +126,17 @@
     return subdir.split('/').map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join(' / ')
   }
 
+  /** Resolve agent color keyword to hex for display */
+  const COLOR_MAP: Record<string, string> = {
+    blue: '#61afef', purple: '#c678dd', green: '#98c379', yellow: '#e5c07b',
+    cyan: '#56b6c2', orange: '#d19a66', red: '#e06c75', pink: '#e06c95',
+    magenta: '#c678dd', teal: '#56b6c2', lime: '#a9dc76', indigo: '#7c8cf5',
+  }
+  function resolveColor(keyword?: string): string | null {
+    if (!keyword) return null
+    return COLOR_MAP[keyword.toLowerCase()] ?? null
+  }
+
 </script>
 
 {#snippet groupedList(grouped: Map<string, CustomSkill[]>, prefix: string, showOrigin: boolean)}
@@ -101,6 +161,9 @@
   <div class="custom-skill-item">
     <button class="skill-body" onclick={() => useSkill(skill)} title="Insert into input">
       <div class="cmd-row">
+        {#if skill.color}
+          <span class="cmd-color-dot" style="background: {resolveColor(skill.color) ?? skill.color};"></span>
+        {/if}
         <span class="cmd-name">/{skill.name}</span>
         {#if showOrigin && skill.relativeTo !== workspaceStore.active?.path}
           <span class="cmd-origin" title={skill.relativeTo}>
@@ -108,7 +171,7 @@
           </span>
         {/if}
       </div>
-      <span class="cmd-desc">{skill.content.slice(0, 80).replace(/\n/g, ' ')}{skill.content.length > 80 ? '…' : ''}</span>
+      <span class="cmd-desc">{skill.metaDescription || skill.content.slice(0, 80).replace(/\n/g, ' ')}{!skill.metaDescription && skill.content.length > 80 ? '…' : ''}</span>
       {#if showOrigin}
         <span class="cmd-path">{skillsStore.getRelativePath(skill, workspaceStore.active?.path)}</span>
       {/if}
@@ -140,81 +203,104 @@
       >Project</button>
     </div>
 
+    <!-- ─── Search / Filter ─────────────────────────────── -->
+    <div class="filter-bar">
+      <svg class="filter-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input
+        class="filter-input"
+        type="text"
+        placeholder="Filter skills…"
+        bind:value={filterQuery}
+        bind:this={filterInputEl}
+      />
+      {#if filterQuery}
+        <button class="filter-clear" onclick={() => { filterQuery = ''; filterInputEl?.focus() }} title="Clear">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <span class="filter-count">{totalFiltered}</span>
+      {/if}
+    </div>
+
     {#if skillsStore.loading}
       <div class="loading"><div class="spinner"></div></div>
     {:else}
       <!-- ─── Project Skills (.claude/skills/) ─────────── -->
-      {#if skillsStore.projectSkills.length > 0}
+      {#if filteredProjectSkills.length > 0}
         <div class="section">
           <div class="section-label">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
             <span class="kind-badge skill">Skills</span>
-            <span class="count">{skillsStore.projectSkills.length}</span>
+            <span class="count">{filteredProjectSkills.length}</span>
           </div>
-          {@render groupedList(skillsStore.projectSkillsGrouped, 'p-skill', true)}
+          {@render groupedList(filterGrouped(skillsStore.projectSkillsGrouped), 'p-skill', true)}
         </div>
       {/if}
 
       <!-- ─── Project Agents (.claude/agents/) ─────────── -->
-      {#if skillsStore.projectAgents.length > 0}
+      {#if filteredProjectAgents.length > 0}
         <div class="section">
           <div class="section-label">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             <span class="kind-badge agent">Agents</span>
-            <span class="count">{skillsStore.projectAgents.length}</span>
+            <span class="count">{filteredProjectAgents.length}</span>
           </div>
-          {@render groupedList(skillsStore.projectAgentsGrouped, 'p-agent', true)}
+          {@render groupedList(filterGrouped(skillsStore.projectAgentsGrouped), 'p-agent', true)}
         </div>
       {/if}
 
       <!-- ─── Project Commands (.claude/commands/) ──────── -->
-      {#if skillsStore.projectCommands.length > 0}
+      {#if filteredProjectCommands.length > 0}
         <div class="section">
           <div class="section-label">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>
             <span class="kind-badge command">Commands</span>
-            <span class="count">{skillsStore.projectCommands.length}</span>
+            <span class="count">{filteredProjectCommands.length}</span>
           </div>
-          {@render groupedList(skillsStore.projectCommandsGrouped, 'p-cmd', true)}
+          {@render groupedList(filterGrouped(skillsStore.projectCommandsGrouped), 'p-cmd', true)}
         </div>
       {/if}
 
       <!-- ─── User Skills/Agents/Commands ──────────────── -->
-      {#if skillsStore.userSkills.length > 0}
+      {#if filteredUserSkills.length > 0}
         <div class="section">
           <div class="section-label user-section">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
             User Skills
-            <span class="count">{skillsStore.userSkills.length}</span>
+            <span class="count">{filteredUserSkills.length}</span>
           </div>
-          {@render groupedList(skillsStore.userSkillsGrouped, 'u-skill', false)}
+          {@render groupedList(filterGrouped(skillsStore.userSkillsGrouped), 'u-skill', false)}
         </div>
       {/if}
 
-      {#if skillsStore.userAgents.length > 0}
+      {#if filteredUserAgents.length > 0}
         <div class="section">
           <div class="section-label user-section">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
             User Agents
-            <span class="count">{skillsStore.userAgents.length}</span>
+            <span class="count">{filteredUserAgents.length}</span>
           </div>
-          {@render groupedList(skillsStore.userAgentsGrouped, 'u-agent', false)}
+          {@render groupedList(filterGrouped(skillsStore.userAgentsGrouped), 'u-agent', false)}
         </div>
       {/if}
 
-      {#if skillsStore.userCommands.length > 0}
+      {#if filteredUserCommands.length > 0}
         <div class="section">
           <div class="section-label user-section">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
             User Commands
-            <span class="count">{skillsStore.userCommands.length}</span>
+            <span class="count">{filteredUserCommands.length}</span>
           </div>
-          {@render groupedList(skillsStore.userCommandsGrouped, 'u-cmd', false)}
+          {@render groupedList(filterGrouped(skillsStore.userCommandsGrouped), 'u-cmd', false)}
         </div>
       {/if}
 
-      <!-- ─── No custom skills found ────────────────────── -->
-      {#if skillsStore.customSkills.length === 0}
+      <!-- ─── No results ────────────────────────────────── -->
+      {#if filterQuery && totalFiltered === 0}
+        <div class="empty-custom">
+          <p class="empty-title">No matches for "{filterQuery}"</p>
+          <p class="empty-desc">Try a different search term.</p>
+        </div>
+      {:else if !filterQuery && skillsStore.customSkills.length === 0}
         <div class="empty-custom">
           <div class="empty-icon">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>
@@ -227,37 +313,41 @@
       {/if}
 
       <!-- ─── Built-in Tools ────────────────────────────── -->
-      <div class="section">
-        <div class="section-label">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-          Built-in Tools
+      {#if filteredBuiltinSkills.length > 0}
+        <div class="section">
+          <div class="section-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            Built-in Tools
+            {#if filterQuery}<span class="count">{filteredBuiltinSkills.length}</span>{/if}
+          </div>
+          {#each filteredBuiltinSkills as skill (skill.id)}
+            <label class="skill-item">
+              <div class="skill-info">
+                <span class="skill-name">{skill.name}</span>
+                <span class="skill-desc-text">{skill.description}</span>
+              </div>
+              <div class="toggle" class:on={skill.enabled}>
+                <input
+                  type="checkbox"
+                  checked={skill.enabled}
+                  onchange={() => toggleSkill(skill.id)}
+                />
+                <span class="toggle-slider"></span>
+              </div>
+            </label>
+          {/each}
         </div>
-        {#each skillsStore.builtinSkills as skill (skill.id)}
-          <label class="skill-item">
-            <div class="skill-info">
-              <span class="skill-name">{skill.name}</span>
-              <span class="skill-desc-text">{skill.description}</span>
-            </div>
-            <div class="toggle" class:on={skill.enabled}>
-              <input
-                type="checkbox"
-                checked={skill.enabled}
-                onchange={() => toggleSkill(skill.id)}
-              />
-              <span class="toggle-slider"></span>
-            </div>
-          </label>
-        {/each}
-      </div>
+      {/if}
 
       <!-- ─── MCP Tools ─────────────────────────────────── -->
-      {#if skillsStore.mcpSkills.length > 0}
+      {#if filteredMcpSkills.length > 0}
         <div class="section">
           <div class="section-label">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
             MCP Tools
+            {#if filterQuery}<span class="count">{filteredMcpSkills.length}</span>{/if}
           </div>
-          {#each skillsStore.mcpSkills as skill (skill.id)}
+          {#each filteredMcpSkills as skill (skill.id)}
             <label class="skill-item">
               <div class="skill-info">
                 <span class="skill-name">{skill.name}</span>
@@ -295,6 +385,35 @@
   .scope-btn:hover:not(:disabled) { color: #abb2bf; }
   .scope-btn.active { background: #3e4451; color: #abb2bf; }
   .scope-btn:disabled { opacity: 0.4; cursor: default; }
+
+  /* ── Filter bar ── */
+  .filter-bar {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 8px; padding: 0 2px;
+    background: #2c313a; border-radius: 6px;
+    border: 1px solid transparent;
+    transition: border-color 120ms ease;
+  }
+  .filter-bar:focus-within { border-color: #4b5263; }
+  .filter-icon { flex-shrink: 0; color: #5c6370; margin-left: 8px; }
+  .filter-input {
+    flex: 1; padding: 7px 0; border: none; background: transparent;
+    color: #abb2bf; font-size: 12px; outline: none;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+  }
+  .filter-input::placeholder { color: #4b5263; }
+  .filter-clear {
+    display: flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border: none; border-radius: 4px;
+    background: transparent; color: #5c6370; cursor: pointer;
+    transition: all 100ms ease;
+  }
+  .filter-clear:hover { background: #3e4451; color: #abb2bf; }
+  .filter-count {
+    font-size: 10px; color: #5c6370; margin-right: 8px;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    flex-shrink: 0;
+  }
 
   /* ── Loading ── */
   .loading { display: flex; justify-content: center; padding: 32px; }
@@ -361,6 +480,9 @@
 
   .cmd-row { display: flex; align-items: center; gap: 6px; }
 
+  .cmd-color-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
   .cmd-name {
     font-size: 13px; font-weight: 600; color: #c678dd;
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;

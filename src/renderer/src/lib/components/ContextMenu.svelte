@@ -24,6 +24,7 @@
     <button class="item" onclick={() => handle('open-ide')}>Open in IDE</button>
     <button class="item" onclick={() => handle('reveal-finder')}>Reveal in Finder</button>
     <div class="divider"></div>
+    <button class="item" onclick={() => handle('rename')}>Rename Workspace</button>
     <button class="item danger" onclick={() => handle('remove')}>Remove from List</button>
   </div>
 {/if}

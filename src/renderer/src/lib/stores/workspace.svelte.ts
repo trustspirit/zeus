@@ -27,6 +27,20 @@ class WorkspaceStore {
       this.activeDirInfo = null
     }
     await this.load()
+    // Select next available workspace if we just removed the active one
+    if (!this.active && this.list.length > 0) {
+      await this.select(this.list[0])
+    }
+  }
+
+  async rename(wsPath: string, newName: string) {
+    await window.zeus.workspace.rename(wsPath, newName)
+    await this.load()
+    // Update active workspace reference if it was renamed
+    if (this.active?.path === wsPath) {
+      const updated = this.list.find((w) => w.path === wsPath)
+      if (updated) this.active = updated
+    }
   }
 
   async select(ws: Workspace, silent = false) {

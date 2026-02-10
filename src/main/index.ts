@@ -53,6 +53,8 @@ interface ClaudeSessionEntry {
   process: ReturnType<typeof spawn> | null
   sessionId: string | null
   cwd: string
+  /** Whether stdin is still open and writable for prompt responses */
+  stdinReady: boolean
 }
 
 // ── State ──────────────────────────────────────────────────────────────────────
@@ -490,8 +492,19 @@ function registerIPC(): void {
 
   ipcMain.handle('workspace:remove', (_, wsPath: string) => {
     store.workspaces = store.workspaces.filter((w) => w.path !== wsPath)
+    if (store.lastWorkspace === wsPath) store.lastWorkspace = null
     saveStore(store)
     return true
+  })
+
+  ipcMain.handle('workspace:rename', (_, wsPath: string, newName: string) => {
+    const ws = store.workspaces.find((w) => w.path === wsPath)
+    if (ws) {
+      ws.name = newName.trim() || path.basename(wsPath)
+      saveStore(store)
+      return true
+    }
+    return false
   })
 
   ipcMain.handle('workspace:set-last', (_, wsPath: string) => {
@@ -687,22 +700,42 @@ function registerIPC(): void {
   ipcMain.handle('claude-session:abort', (_, conversationId: string) => {
     const session = claudeSessions.get(conversationId)
     if (session?.process) {
+      // End stdin before killing to avoid EPIPE
+      if (session.stdinReady && session.process.stdin && !session.process.stdin.destroyed) {
+        try { session.process.stdin.end() } catch { /* ignore */ }
+        session.stdinReady = false
+      }
       session.process.kill('SIGINT')
     }
     return true
   })
 
-  // Write a response to the running Claude process stdin (for permission prompts, option selection)
+  // Respond to a permission/choice prompt from Claude Code.
+  // Primary path: write the response directly to the still-open stdin.
+  // Fallback:      abort + re-spawn with --resume if stdin is unavailable.
   ipcMain.handle('claude-session:respond', (_, conversationId: string, response: string) => {
     const session = claudeSessions.get(conversationId)
-    if (session?.process?.stdin && !session.process.stdin.destroyed) {
-      try {
-        session.process.stdin.write(response + '\n')
-        return true
-      } catch (e) {
-        console.warn(`[zeus] Failed to write to stdin [${conversationId}]:`, e)
-        return false
-      }
+    if (!session) return false
+
+    // Primary: write directly to stdin (fast, preserves process)
+    if (session.stdinReady && session.process?.stdin && !session.process.stdin.destroyed) {
+      console.log(`[zeus] Responding to prompt [${conversationId}] via stdin: "${response}"`)
+      session.process.stdin.write(response + '\n')
+      return true
+    }
+
+    // Fallback: abort current process and re-spawn with --resume
+    console.log(`[zeus] stdin unavailable for [${conversationId}], falling back to abort+resume`)
+    if (session.process) {
+      try { session.process.kill('SIGINT') } catch { /* ignore */ }
+      session.process.removeAllListeners()
+      session.process.stdout?.removeAllListeners()
+      session.process.stderr?.removeAllListeners()
+      session.process = null
+    }
+
+    if (session.sessionId && session.cwd) {
+      return spawnClaudeSession(conversationId, response, session.cwd, undefined, session.sessionId)
     }
     return false
   })
@@ -711,7 +744,12 @@ function registerIPC(): void {
   ipcMain.handle('claude-session:close', (_, conversationId: string) => {
     const session = claudeSessions.get(conversationId)
     if (session?.process) {
-      try { session.process.kill('SIGINT') } catch { /* ignore */ }
+      try {
+        if (session.stdinReady && session.process.stdin && !session.process.stdin.destroyed) {
+          session.process.stdin.end()
+        }
+        session.process.kill('SIGINT')
+      } catch { /* ignore */ }
     }
     claudeSessions.delete(conversationId)
     return true
@@ -965,6 +1003,29 @@ interface CustomSkillEntry {
   relativeTo: string // workspace root or parent dir where .claude/ was found
   content: string // first 200 chars for description preview
   subdir: string // subdirectory within commands/ (e.g. "workflow", "skills", or "")
+  /** Agent color from YAML frontmatter (e.g. "purple", "cyan") */
+  color?: string
+  /** Description from YAML frontmatter (overrides content preview) */
+  metaDescription?: string
+}
+
+/** Parse YAML frontmatter from a markdown file and return { meta, body } */
+function parseFrontmatter(raw: string): { meta: Record<string, string>; body: string } {
+  const meta: Record<string, string> = {}
+  const match = raw.match(/^---\n([\s\S]*?)\n---\n?/)
+  if (!match) return { meta, body: raw }
+
+  const yamlBlock = match[1]
+  const body = raw.slice(match[0].length)
+
+  // Simple line-by-line parsing for flat key: value pairs
+  for (const line of yamlBlock.split('\n')) {
+    const kv = line.match(/^(\w[\w-]*):\s*(.+)$/)
+    if (kv) {
+      meta[kv[1].trim()] = kv[2].trim()
+    }
+  }
+  return { meta, body }
 }
 
 /** The three .claude/ subdirectories we scan for skills */
@@ -1053,15 +1114,22 @@ function collectCommandFilesRecursive(
 
         try {
           const raw = fs.readFileSync(fullPath, 'utf-8')
+          const { meta, body } = parseFrontmatter(raw)
+
+          // Use frontmatter name if available (overrides path-derived name)
+          const entryName = meta.name || colonName
+
           results.push({
-            name: colonName,
+            name: entryName,
             filename: entry.name,
             filePath: fullPath,
             scope,
             kind,
             relativeTo,
-            content: raw.slice(0, 200),
-            subdir
+            content: (body || raw).slice(0, 200),
+            subdir,
+            color: meta.color || undefined,
+            metaDescription: meta.description || undefined
           })
         } catch { /* unreadable file */ }
       } else if (entry.isDirectory() && !entry.name.startsWith('.')) {
@@ -1424,7 +1492,7 @@ function spawnClaudeSession(conversationId: string, prompt: string, cwd: string,
   // Get or create session state
   let session = claudeSessions.get(conversationId)
   if (!session) {
-    session = { process: null, sessionId: null, cwd }
+    session = { process: null, sessionId: null, cwd, stdinReady: false }
     claudeSessions.set(conversationId, session)
   }
 
@@ -1446,7 +1514,11 @@ function spawnClaudeSession(conversationId: string, prompt: string, cwd: string,
 
   // Build args: claude -p "prompt" --output-format stream-json --verbose --include-partial-messages [--model x] [--resume sessionId]
   const claudePath = getClaudeCliPath()
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--include-partial-messages']
+
+  // Safety: if prompt starts with "-", prefix with a newline to prevent CLI misinterpretation
+  const safePrompt = prompt.startsWith('-') ? '\n' + prompt : prompt
+
+  const args = ['-p', safePrompt, '--output-format', 'stream-json', '--verbose', '--include-partial-messages']
 
   if (model) {
     args.push('--model', model)
@@ -1472,8 +1544,23 @@ function spawnClaudeSession(conversationId: string, prompt: string, cwd: string,
     stdio: ['pipe', 'pipe', 'pipe']
   })
 
-  // Keep stdin open so we can respond to permission prompts and option requests.
-  // Claude Code in -p mode may ask for tool permissions via stderr.
+  // Keep stdin open so we can respond to permission/choice prompts interactively.
+  // Safety: if Claude produces no output within 5 seconds (possible hang waiting for
+  // piped input), close stdin as a fallback.
+  session.stdinReady = true
+  let gotOutput = false
+  const stdinSafetyTimer = setTimeout(() => {
+    if (!gotOutput && child.stdin && !child.stdin.destroyed) {
+      console.log(`[zeus] No output after 5s [${conversationId}] — closing stdin as safety fallback`)
+      try { child.stdin.end() } catch { /* ignore */ }
+      session!.stdinReady = false
+    }
+  }, 5000)
+
+  child.stdout?.once('data', () => {
+    gotOutput = true
+    clearTimeout(stdinSafetyTimer)
+  })
 
   session.process = child
 
@@ -1560,6 +1647,7 @@ function spawnClaudeSession(conversationId: string, prompt: string, cwd: string,
     }
 
     session!.process = null
+    session!.stdinReady = false
 
     mainWindow?.webContents.send('claude-session:done', {
       id: conversationId,
@@ -1741,12 +1829,16 @@ function killAllClaudeSessions(): void {
   for (const [, s] of claudeSessions) {
     if (s.process) {
       try {
+        if (s.stdinReady && s.process.stdin && !s.process.stdin.destroyed) {
+          s.process.stdin.end()
+        }
         s.process.removeAllListeners()
         s.process.stdout?.removeAllListeners()
         s.process.stderr?.removeAllListeners()
         s.process.kill('SIGINT')
       } catch { /* ignore */ }
       s.process = null
+      s.stdinReady = false
     }
   }
   claudeSessions.clear()

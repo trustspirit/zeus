@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld('zeus', {
     list: () => ipcRenderer.invoke('workspace:list'),
     add: () => ipcRenderer.invoke('workspace:add'),
     remove: (wsPath: string) => ipcRenderer.invoke('workspace:remove', wsPath),
+    rename: (wsPath: string, newName: string) => ipcRenderer.invoke('workspace:rename', wsPath, newName),
     setLast: (wsPath: string) => ipcRenderer.invoke('workspace:set-last', wsPath),
     getLast: () => ipcRenderer.invoke('workspace:get-last'),
     reorder: (orderedPaths: string[]) => ipcRenderer.invoke('workspace:reorder', orderedPaths)

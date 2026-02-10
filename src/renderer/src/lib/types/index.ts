@@ -67,6 +67,10 @@ export interface CustomSkill {
   relativeTo: string // workspace root or parent dir where .claude/ was found
   content: string // first 200 chars for description preview
   subdir: string // subdirectory within commands/ (e.g. "workflow", "skills", or "")
+  /** Agent/skill color from YAML frontmatter (e.g. "purple", "cyan") */
+  color?: string
+  /** Description from YAML frontmatter */
+  metaDescription?: string
 }
 
 // ── MCP ────────────────────────────────────────────────────────────────────────
@@ -157,6 +161,23 @@ export interface PendingPrompt {
   rawText?: string
 }
 
+/** Quick-reply button for model-level questions (e.g. "1) Option A  2) Option B") */
+export interface QuickReply {
+  label: string   // display label (e.g. "Option A")
+  value: string   // what gets sent (e.g. "1")
+}
+
+/** Active subagent (Task tool) info */
+export interface SubagentInfo {
+  name: string              // agent name (e.g. "frontend-architect", "code-reviewer")
+  color: string             // deterministic color hex based on name
+  description: string       // from Task input.description or prompt snippet
+  nestedStatus: string      // current tool activity inside the subagent
+  nestedToolName?: string   // current tool name (for icon display)
+  toolsUsed: string[]       // history of tools used by this subagent
+  startedAt: number
+}
+
 export interface ClaudeConversation {
   id: string             // Zeus-internal conversation ID
   claudeSessionId: string | null  // Claude Code's session_id for --resume
@@ -170,6 +191,10 @@ export interface ClaudeConversation {
   streamingStatus: string
   /** Pending prompt from Claude Code waiting for user response */
   pendingPrompt: PendingPrompt | null
+  /** Active subagent (Task tool) info — set while a subagent is running */
+  activeSubagent: SubagentInfo | null
+  /** Quick-reply buttons when the model asks a numbered-choice question */
+  quickReplies: QuickReply[]
 }
 
 export interface ClaudeStreamEvent {
@@ -215,6 +240,7 @@ export interface ZeusAPI {
     list(): Promise<Workspace[]>
     add(): Promise<{ path: string; name: string } | null>
     remove(wsPath: string): Promise<boolean>
+    rename(wsPath: string, newName: string): Promise<boolean>
     setLast(wsPath: string): Promise<boolean>
     getLast(): Promise<string | null>
     reorder(orderedPaths: string[]): Promise<boolean>
