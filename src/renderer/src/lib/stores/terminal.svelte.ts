@@ -17,13 +17,18 @@ class TerminalStore {
   private _unsubExit: (() => void) | null = null
   private _resizeTimer: ReturnType<typeof setTimeout> | null = null
 
-  /** Start listening for PTY events. Call once on mount. */
+  /** Start listening for PTY events. Call once on mount.
+   *  [A4] The callbacks appear to be no-ops, but calling onData/onExit is
+   *  required to register the IPC listeners in preload (which does the actual
+   *  xterm.write). Without calling these, no data flows to xterm. */
   listen() {
-    this._unsubData = window.zeus.terminal.onData(() => {
-      // xterm write is handled in preload; no-op here
-    })
+    this._unsubData = window.zeus.terminal.onData(() => { /* preload handles xterm.write */ })
     this._unsubExit = window.zeus.terminal.onExit(({ id }) => {
-      void id
+      // Auto-remove the session when the PTY process exits
+      this.sessions = this.sessions.filter((s) => s.id !== id)
+      if (this.activeId === id) {
+        this.activeId = this.sessions.length > 0 ? this.sessions[this.sessions.length - 1].id : null
+      }
     })
   }
 
@@ -39,7 +44,6 @@ class TerminalStore {
 
     const session: TerminalSession = {
       id,
-      isClaude: false,
       title: `Terminal ${id}`,
       workspacePath,
       history: [],

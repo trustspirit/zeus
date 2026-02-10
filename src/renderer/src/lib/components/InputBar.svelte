@@ -1,122 +1,96 @@
 <script lang="ts">
-  import { terminalStore } from '../stores/terminal.svelte.js'
   import { claudeSessionStore } from '../stores/claude-session.svelte.js'
   import { workspaceStore } from '../stores/workspace.svelte.js'
-  import { uiStore } from '../stores/ui.svelte.js'
-  import IconBolt from './icons/IconBolt.svelte'
-  import IconTerminal from './icons/IconTerminal.svelte'
+  import { uiStore, AVAILABLE_MODELS } from '../stores/ui.svelte.js'
+  import IconClaude from './icons/IconClaude.svelte'
 
   let inputEl: HTMLTextAreaElement
   let inputValue = $state('')
+  let modelMenuOpen = $state(false)
 
-  /** Determine which mode we're in based on active view */
-  const isClaudeMode = $derived(uiStore.activeView === 'claude')
-  const terminalSession = $derived(terminalStore.activeSession)
-  const claudeConv = $derived(claudeSessionStore.activeConversation)
-
-  /** Something is active (either terminal or claude conversation) */
-  const hasActiveTarget = $derived(
-    isClaudeMode ? !!claudeConv : !!terminalSession
+  const currentModel = $derived(
+    AVAILABLE_MODELS.find((m) => m.id === uiStore.selectedModel) ?? AVAILABLE_MODELS[0]
   )
 
-  /** Whether claude is currently streaming (disable input) */
+  function selectModel(id: string) {
+    uiStore.selectedModel = id
+    modelMenuOpen = false
+  }
+
+  function toggleModelMenu() {
+    modelMenuOpen = !modelMenuOpen
+  }
+
+  /** Close model menu when clicking outside */
+  function handleWindowClick(e: MouseEvent) {
+    const target = e.target as HTMLElement
+    if (modelMenuOpen && !target.closest('.model-selector')) {
+      modelMenuOpen = false
+    }
+  }
+
+  const claudeConv = $derived(claudeSessionStore.activeConversation)
+  const hasActiveTarget = $derived(!!claudeConv)
   const isStreaming = $derived(claudeConv?.isStreaming ?? false)
 
-  /** Focus input when active session changes */
+  /** Focus input when active conversation changes */
   $effect(() => {
-    const _ = isClaudeMode ? claudeConv?.id : terminalSession?.id
+    const _ = claudeConv?.id
     void _
     if (hasActiveTarget && inputEl) {
       requestAnimationFrame(() => inputEl?.focus())
     }
   })
 
-  function send() {
-    if (!inputValue.trim()) return
-
-    if (isClaudeMode && claudeConv) {
-      if (isStreaming) return // don't send while streaming
-      claudeSessionStore.send(claudeConv.id, inputValue)
-      inputValue = ''
-      resetHeight()
-    } else if (terminalSession) {
-      terminalStore.sendInput(terminalSession.id, inputValue)
-      inputValue = ''
-      resetHeight()
+  /** Pick up prefill text from uiStore (e.g. when a skill is selected).
+   *  [A5] Only react when this InputBar has an active target. */
+  $effect(() => {
+    const seq = uiStore.prefillSeq
+    const text = uiStore.inputPrefill
+    void seq
+    if (text && inputEl && hasActiveTarget) {
+      inputValue = text
+      uiStore.consumePrefill()
+      requestAnimationFrame(() => {
+        if (inputEl) {
+          inputEl.focus()
+          inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length
+          handleInput()
+        }
+      })
     }
+  })
+
+  function send() {
+    if (!inputValue.trim() || !claudeConv || isStreaming) return
+    claudeSessionStore.send(claudeConv.id, inputValue)
+    inputValue = ''
+    resetHeight()
   }
 
   function handleKeydown(e: KeyboardEvent) {
     if (!hasActiveTarget) return
 
-    // Enter = send (Shift+Enter = new line)
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       send()
       return
     }
 
-    // Ctrl+C = interrupt (abort for claude, SIGINT for terminal)
-    if (e.key === 'c' && e.ctrlKey) {
+    // Ctrl+C = abort streaming
+    if (e.key === 'c' && e.ctrlKey && claudeConv) {
       e.preventDefault()
-      if (isClaudeMode && claudeConv) {
-        claudeSessionStore.abort(claudeConv.id)
-      } else if (terminalSession) {
-        terminalStore.sendRaw(terminalSession.id, '\x03')
-      }
+      claudeSessionStore.abort(claudeConv.id)
       inputValue = ''
       resetHeight()
       return
     }
-
-    // Ctrl+D = send EOF (terminal only)
-    if (e.key === 'd' && e.ctrlKey && !isClaudeMode && terminalSession) {
-      e.preventDefault()
-      terminalStore.sendRaw(terminalSession.id, '\x04')
-      return
-    }
-
-    // Arrow Up/Down = history (terminal only)
-    if (!isClaudeMode && terminalSession) {
-      if (e.key === 'ArrowUp' && !e.shiftKey) {
-        const prev = terminalStore.historyUp(terminalSession.id)
-        if (prev !== null) {
-          e.preventDefault()
-          inputValue = prev
-          requestAnimationFrame(() => {
-            if (inputEl) inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length
-          })
-        }
-        return
-      }
-
-      if (e.key === 'ArrowDown' && !e.shiftKey) {
-        const next = terminalStore.historyDown(terminalSession.id)
-        if (next !== null) {
-          e.preventDefault()
-          inputValue = next
-          requestAnimationFrame(() => {
-            if (inputEl) inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length
-          })
-        }
-        return
-      }
-
-      // Tab = send tab character (terminal only)
-      if (e.key === 'Tab') {
-        e.preventDefault()
-        terminalStore.sendRaw(terminalSession.id, '\t')
-        return
-      }
-    }
   }
 
-  /** Auto-resize textarea */
   function handleInput() {
     if (!inputEl) return
     inputEl.style.height = 'auto'
-    const maxH = 150
-    inputEl.style.height = Math.min(inputEl.scrollHeight, maxH) + 'px'
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 150) + 'px'
   }
 
   function resetHeight() {
@@ -124,34 +98,25 @@
     inputEl.style.height = 'auto'
   }
 
-  /** Expose focus method for parent */
   export function focus() {
     inputEl?.focus()
   }
 </script>
 
-<div class="input-bar" class:claude={isClaudeMode}>
+<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+<svelte:window onclick={handleWindowClick} />
+<div class="input-bar">
   <div class="input-row">
-    <!-- Mode indicator -->
-    <div class="mode-icon" class:claude={isClaudeMode}>
-      {#if isClaudeMode}
-        <IconBolt size={16} />
-      {:else}
-        <IconTerminal size={16} />
-      {/if}
+    <div class="mode-icon">
+      <IconClaude size={16} />
     </div>
+    <span class="prompt">{'>'}</span>
 
-    <!-- Prompt indicator -->
-    <span class="prompt">{isClaudeMode ? '>' : '$'}</span>
-
-    <!-- Text input -->
     <textarea
       bind:this={inputEl}
       bind:value={inputValue}
       class="input-field"
-      placeholder={isClaudeMode
-        ? (isStreaming ? 'Claude is responding…' : 'Ask Claude...')
-        : 'Enter command...'}
+      placeholder={isStreaming ? 'Claude is responding…' : 'Ask Claude...'}
       rows="1"
       oninput={handleInput}
       onkeydown={handleKeydown}
@@ -160,7 +125,6 @@
       disabled={isStreaming}
     ></textarea>
 
-    <!-- Send button -->
     <button
       class="send-btn"
       class:active={inputValue.trim().length > 0 && !isStreaming}
@@ -176,14 +140,36 @@
     </button>
   </div>
 
-  <!-- Hint bar -->
   <div class="hints">
+    <!-- Model selector -->
+    <div class="model-selector">
+      <button class="model-btn" onclick={toggleModelMenu} title="Select model">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m-7.8-3.6 5.2-3m5.2-3 5.2-3M4.2 5.4l5.2 3m5.2 3 5.2 3"/></svg>
+        <span>{currentModel.label}</span>
+        <svg class="caret" class:open={modelMenuOpen} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {#if modelMenuOpen}
+        <div class="model-menu">
+          {#each AVAILABLE_MODELS as model (model.id)}
+            <button
+              class="model-option"
+              class:active={model.id === uiStore.selectedModel}
+              onclick={() => selectModel(model.id)}
+            >
+              <span class="model-name">{model.label}</span>
+              <span class="model-desc">{model.desc}</span>
+              {#if model.id === uiStore.selectedModel}
+                <svg class="check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              {/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
     <span class="hint"><kbd>Enter</kbd> send</span>
     <span class="hint"><kbd>Shift+Enter</kbd> newline</span>
-    {#if !isClaudeMode}
-      <span class="hint"><kbd>↑↓</kbd> history</span>
-    {/if}
-    <span class="hint"><kbd>Ctrl+C</kbd> {isClaudeMode ? 'abort' : 'interrupt'}</span>
+    <span class="hint"><kbd>Ctrl+C</kbd> abort</span>
     {#if workspaceStore.active}
       <span class="hint ws">{workspaceStore.active.name}</span>
     {/if}
@@ -200,7 +186,7 @@
 
   .input-row {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     gap: 10px;
     background: #1e1e2e;
     border: 1px solid #313244;
@@ -209,10 +195,6 @@
     transition: border-color 200ms ease, box-shadow 200ms ease;
   }
   .input-row:focus-within {
-    border-color: #585b70;
-    box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.1);
-  }
-  .input-bar.claude .input-row:focus-within {
     border-color: #cba6f7;
     box-shadow: 0 0 0 2px rgba(203, 166, 247, 0.12);
   }
@@ -220,27 +202,24 @@
   .mode-icon {
     display: flex; align-items: center; justify-content: center;
     width: 28px; height: 28px; border-radius: 8px;
-    background: #313244; color: #a6adc8; flex-shrink: 0;
-  }
-  .mode-icon.claude {
-    background: rgba(203, 166, 247, 0.15); color: #cba6f7;
+    background: rgba(203, 166, 247, 0.15); color: #cba6f7; flex-shrink: 0;
   }
 
   .prompt {
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
     font-size: 14px; font-weight: 600;
-    color: #585b70; flex-shrink: 0; line-height: 28px;
+    color: #cba6f7; flex-shrink: 0; line-height: 28px;
     user-select: none;
   }
-  .input-bar.claude .prompt { color: #cba6f7; }
 
   .input-field {
     flex: 1; min-width: 0;
     background: transparent; border: none; outline: none;
-    color: #cdd6f4; font-size: 14px; line-height: 1.5;
+    color: #cdd6f4; font-size: 14px; line-height: 28px;
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
     resize: none; overflow-y: auto;
     max-height: 150px;
+    padding: 0; margin: 0;
     scrollbar-width: thin;
   }
   .input-field::placeholder { color: #585b70; }
@@ -254,13 +233,9 @@
     flex-shrink: 0; transition: all 150ms ease;
   }
   .send-btn.active {
-    background: #89b4fa; color: #1e1e2e; cursor: pointer;
+    background: #cba6f7; color: #1e1e2e; cursor: pointer;
   }
-  .send-btn.active:hover { background: #b4d0fb; }
-  .input-bar.claude .send-btn.active {
-    background: #cba6f7; color: #1e1e2e;
-  }
-  .input-bar.claude .send-btn.active:hover { background: #dbbff8; }
+  .send-btn.active:hover { background: #dbbff8; }
 
   /* ── Hints ── */
   .hints {
@@ -281,4 +256,50 @@
     color: #585b70;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
   }
+
+  /* ── Model Selector ── */
+  .model-selector {
+    position: relative;
+  }
+  .model-btn {
+    display: flex; align-items: center; gap: 5px;
+    padding: 3px 8px; border: 1px solid #313244; border-radius: 6px;
+    background: #1e1e2e; color: #a6adc8;
+    font-size: 11px; font-weight: 500; cursor: pointer;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    transition: all 120ms ease;
+  }
+  .model-btn:hover { border-color: #585b70; color: #cdd6f4; }
+  .model-btn .caret {
+    transition: transform 150ms ease;
+  }
+  .model-btn .caret.open { transform: rotate(180deg); }
+
+  .model-menu {
+    position: absolute; bottom: calc(100% + 6px); left: 0;
+    min-width: 180px;
+    background: #1e1e2e; border: 1px solid #313244;
+    border-radius: 10px; padding: 4px;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+    z-index: 100;
+  }
+  .model-option {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; padding: 8px 10px; border: none; border-radius: 7px;
+    background: transparent; color: #a6adc8; cursor: pointer;
+    text-align: left; font-family: inherit;
+    transition: background 100ms ease;
+  }
+  .model-option:hover { background: #313244; color: #cdd6f4; }
+  .model-option.active { color: #cba6f7; }
+
+  .model-name {
+    font-size: 12px; font-weight: 600;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+  }
+  .model-desc {
+    font-size: 10px; color: #585b70; flex: 1;
+  }
+  .model-option.active .model-desc { color: #7f849c; }
+  .check { color: #cba6f7; flex-shrink: 0; }
 </style>

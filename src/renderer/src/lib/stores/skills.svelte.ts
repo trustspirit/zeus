@@ -1,4 +1,5 @@
-import type { Skill, CustomSkill, ClaudeConfig } from '../types/index.js'
+import type { Skill, CustomSkill, ClaudeConfig, MarkdownFile } from '../types/index.js'
+import { markdownStore } from './markdown.svelte.js'
 
 // ── Built-in Claude Code skills ────────────────────────────────────────────────
 
@@ -32,6 +33,22 @@ class SkillsStore {
   mcpSkills = $derived(this.skills.filter((s) => s.category === 'mcp'))
   userCustomSkills = $derived(this.customSkills.filter((s) => s.scope === 'user'))
   projectCustomSkills = $derived(this.customSkills.filter((s) => s.scope === 'project'))
+
+  /** Filtered by kind */
+  projectCommands = $derived(this.projectCustomSkills.filter((s) => s.kind === 'command'))
+  projectSkills = $derived(this.projectCustomSkills.filter((s) => s.kind === 'skill'))
+  projectAgents = $derived(this.projectCustomSkills.filter((s) => s.kind === 'agent'))
+  userCommands = $derived(this.userCustomSkills.filter((s) => s.kind === 'command'))
+  userSkills = $derived(this.userCustomSkills.filter((s) => s.kind === 'skill'))
+  userAgents = $derived(this.userCustomSkills.filter((s) => s.kind === 'agent'))
+
+  /** Group by subdir within each kind */
+  projectCommandsGrouped = $derived.by(() => groupBySubdir(this.projectCommands))
+  projectSkillsGrouped = $derived.by(() => groupBySubdir(this.projectSkills))
+  projectAgentsGrouped = $derived.by(() => groupBySubdir(this.projectAgents))
+  userCommandsGrouped = $derived.by(() => groupBySubdir(this.userCommands))
+  userSkillsGrouped = $derived.by(() => groupBySubdir(this.userSkills))
+  userAgentsGrouped = $derived.by(() => groupBySubdir(this.userAgents))
 
   async load(workspacePath?: string) {
     this.loading = true
@@ -123,11 +140,18 @@ class SkillsStore {
     await this.load(workspacePath)
   }
 
-  /** Open a custom skill's .md file for preview */
+  /** Open a custom skill's .md file as a doc tab in the main content area */
   async openPreview(skill: CustomSkill) {
-    const content = await window.zeus.files.read(skill.filePath)
-    this.previewSkill = skill
-    this.previewContent = content ?? '*(empty file)*'
+    // Build a MarkdownFile-compatible object from the skill entry
+    const parts = skill.filePath.split('/')
+    const mdFile: MarkdownFile = {
+      name: skill.filename,
+      path: skill.filePath,
+      size: 0,
+      relativePath: skill.filePath,
+      dir: parts.slice(0, -1).join('/')
+    }
+    await markdownStore.openFile(mdFile)
   }
 
   closePreview() {
@@ -137,7 +161,11 @@ class SkillsStore {
 
   /** Get the slash command string for a custom skill */
   getSlashCommand(skill: CustomSkill): string {
-    return skill.scope === 'user' ? `/user:${skill.name}` : `/project:${skill.name}`
+    if (skill.kind === 'command') {
+      return skill.scope === 'user' ? `/user:${skill.name}` : `/project:${skill.name}`
+    }
+    // skills and agents use their kind as prefix
+    return `/${skill.kind}:${skill.name}`
   }
 
   /** Relative path display (from workspace root) */
@@ -149,7 +177,8 @@ class SkillsStore {
     }
     // If it's a global skill, show ~ prefix
     if (skill.scope === 'user') {
-      return `~/.claude/commands/${skill.filename}`
+      const kindDir = skill.kind === 'command' ? 'commands' : skill.kind === 'skill' ? 'skills' : 'agents'
+      return `~/.claude/${kindDir}/${skill.subdir ? skill.subdir + '/' : ''}${skill.filename}`
     }
     return skill.filePath
   }
@@ -157,6 +186,17 @@ class SkillsStore {
   setScope(scope: 'global' | 'project') {
     this.scope = scope
   }
+}
+
+/** Group custom skills by their subdir field (for tree-like display) */
+function groupBySubdir(skills: CustomSkill[]): Map<string, CustomSkill[]> {
+  const groups = new Map<string, CustomSkill[]>()
+  for (const skill of skills) {
+    const key = skill.subdir || ''
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(skill)
+  }
+  return groups
 }
 
 export const skillsStore = new SkillsStore()

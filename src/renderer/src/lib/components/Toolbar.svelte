@@ -3,7 +3,7 @@
   import { uiStore } from '../stores/ui.svelte.js'
   import TabBar from './TabBar.svelte'
   import IconSidebar from './icons/IconSidebar.svelte'
-  import IconPlay from './icons/IconPlay.svelte'
+  import IconClaude from './icons/IconClaude.svelte'
   import IconPlus from './icons/IconPlus.svelte'
   import IconCode from './icons/IconCode.svelte'
   import IconFolder from './icons/IconFolder.svelte'
@@ -39,7 +39,7 @@
 
   <div class="toolbar-right">
     <button class="action-btn primary" title="Run Claude Code" onclick={onrunClaude}>
-      <IconPlay size={16} />
+      <IconClaude size={16} />
       <span>Claude Code</span>
     </button>
     <button class="icon-btn" title="New terminal (Cmd+T)" onclick={onnewTerminal}>

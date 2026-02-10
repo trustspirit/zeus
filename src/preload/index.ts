@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import path from 'node:path'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 
@@ -73,18 +72,16 @@ contextBridge.exposeInMainWorld('zeus', {
           "'D2Coding ligature', D2Coding, 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, monospace",
         lineHeight: 1.35,
         theme: THEME,
-        cursorBlink: false,
+        cursorBlink: true,
         cursorStyle: 'bar',
-        cursorInactiveStyle: 'none',
+        cursorInactiveStyle: 'outline',
         allowTransparency: true,
         scrollback: 5000,
         tabStopWidth: 4,
         macOptionIsMeta: true,
         macOptionClickForcesSelection: true,
         drawBoldTextInBrightColors: true,
-        minimumContrastRatio: 1,
-        // Output-only: keyboard input is handled by InputBar
-        disableStdin: true
+        minimumContrastRatio: 1
       })
 
       const addons: { dispose(): void }[] = []
@@ -117,7 +114,8 @@ contextBridge.exposeInMainWorld('zeus', {
 
       fitAddon.fit()
 
-      // No xterm.onData — keyboard input goes through InputBar, not raw xterm
+      // Pipe keyboard input directly to PTY (standard terminal behavior)
+      xterm.onData((data) => ipcRenderer.send('terminal:write', { id: termId, data }))
       xterm.onResize(({ cols, rows }) =>
         ipcRenderer.send('terminal:resize', { id: termId, cols, rows })
       )
@@ -194,10 +192,18 @@ contextBridge.exposeInMainWorld('zeus', {
 
   // ── Claude Session (headless -p mode) ──
   claudeSession: {
-    send: (conversationId: string, prompt: string, cwd: string) =>
-      ipcRenderer.invoke('claude-session:send', conversationId, prompt, cwd),
+    send: (conversationId: string, prompt: string, cwd: string, model?: string) =>
+      ipcRenderer.invoke('claude-session:send', conversationId, prompt, cwd, model),
     abort: (conversationId: string) =>
       ipcRenderer.invoke('claude-session:abort', conversationId),
+    close: (conversationId: string) =>
+      ipcRenderer.invoke('claude-session:close', conversationId),
+    listSaved: (workspacePath: string) =>
+      ipcRenderer.invoke('claude-session:list-saved', workspacePath),
+    save: (session: { sessionId: string; title: string; workspacePath: string }) =>
+      ipcRenderer.invoke('claude-session:save', session),
+    deleteSaved: (sessionId: string) =>
+      ipcRenderer.invoke('claude-session:delete-saved', sessionId),
     onEvent: (callback: (payload: { id: string; event: Record<string, unknown> }) => void) => {
       const handler = (_: Electron.IpcRendererEvent, payload: { id: string; event: Record<string, unknown> }) =>
         callback(payload)

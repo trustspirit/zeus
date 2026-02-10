@@ -17,7 +17,6 @@ export interface DirInfo {
 // ── Terminal ───────────────────────────────────────────────────────────────────
 export interface TerminalSession {
   id: number
-  isClaude: boolean
   title: string
   workspacePath: string | undefined
   history: string[]       // command history for this session
@@ -60,12 +59,14 @@ export interface Skill {
 }
 
 export interface CustomSkill {
-  name: string // command name derived from filename (without .md)
-  filename: string // e.g. "refactor.md"
+  name: string // command name, colon-separated for nested (e.g. "workflow:deploy")
+  filename: string // e.g. "deploy.md"
   filePath: string // absolute path to the .md file
   scope: 'user' | 'project' // global ~/.claude/commands vs project-level
+  kind: 'command' | 'skill' | 'agent' // from .claude/commands/, .claude/skills/, or .claude/agents/
   relativeTo: string // workspace root or parent dir where .claude/ was found
   content: string // first 200 chars for description preview
+  subdir: string // subdirectory within commands/ (e.g. "workflow", "skills", or "")
 }
 
 // ── MCP ────────────────────────────────────────────────────────────────────────
@@ -95,7 +96,7 @@ export interface MarkdownFile {
 export interface DocTab {
   id: string // unique tab id (= file path)
   file: MarkdownFile
-  content: string
+  content: string | null // null when content is released from memory (inactive tab)
 }
 
 // ── Claude Conversation (headless mode) ─────────────────────────────────────
@@ -140,6 +141,14 @@ export interface ClaudeStreamEvent {
   [key: string]: unknown
 }
 
+// ── Saved Session (per-workspace history) ────────────────────────────────────
+export interface SavedSession {
+  sessionId: string
+  title: string
+  workspacePath: string
+  lastUsed: number
+}
+
 // ── Store ──────────────────────────────────────────────────────────────────────
 export interface AppStore {
   workspaces: Workspace[]
@@ -176,8 +185,12 @@ export interface ZeusAPI {
     update(): Promise<ClaudeUpdateResult>
   }
   claudeSession: {
-    send(conversationId: string, prompt: string, cwd: string): Promise<boolean>
+    send(conversationId: string, prompt: string, cwd: string, model?: string): Promise<boolean>
     abort(conversationId: string): Promise<boolean>
+    close(conversationId: string): Promise<boolean>
+    listSaved(workspacePath: string): Promise<SavedSession[]>
+    save(session: { sessionId: string; title: string; workspacePath: string }): Promise<boolean>
+    deleteSaved(sessionId: string): Promise<boolean>
     onEvent(callback: (payload: { id: string; event: ClaudeStreamEvent }) => void): () => void
     onDone(callback: (payload: { id: string; exitCode: number; sessionId?: string }) => void): () => void
   }

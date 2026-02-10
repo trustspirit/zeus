@@ -1,5 +1,5 @@
 <script lang="ts">
-  import IconBolt from './icons/IconBolt.svelte'
+  import IconClaude from './icons/IconClaude.svelte'
   import IconFolder from './icons/IconFolder.svelte'
   import IconPlay from './icons/IconPlay.svelte'
 
@@ -11,7 +11,7 @@
 
 <div class="welcome">
   <div class="content">
-    <div class="icon"><IconBolt size={64} /></div>
+    <div class="icon"><IconClaude size={64} /></div>
     <h1>Welcome to Zeus</h1>
     <p class="subtitle">Your command center for Claude Code</p>
 

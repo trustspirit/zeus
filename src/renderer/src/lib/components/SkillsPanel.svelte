@@ -4,6 +4,9 @@
   import { uiStore } from '../stores/ui.svelte.js'
   import type { CustomSkill } from '../types/index.js'
 
+  /** Track collapsed groups */
+  let collapsedGroups = $state<Set<string>>(new Set())
+
   $effect(() => {
     // Reload when workspace or scope changes
     const ws = workspaceStore.active
@@ -31,39 +34,78 @@
     skillsStore.openPreview(skill)
   }
 
+  /** Insert the slash command into the active InputBar so user can type more */
+  function useSkill(skill: CustomSkill) {
+    const cmd = skillsStore.getSlashCommand(skill)
+    uiStore.prefillInput(cmd)
+  }
+
+  function toggleGroup(key: string) {
+    const next = new Set(collapsedGroups)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    collapsedGroups = next
+  }
+
+  function isGroupCollapsed(key: string): boolean {
+    return collapsedGroups.has(key)
+  }
+
+  /** Display label for a subdir group */
+  function groupLabel(subdir: string): string {
+    if (!subdir) return 'Commands'
+    // Capitalize first letter of each part
+    return subdir.split('/').map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join(' / ')
+  }
+
 </script>
 
-<div class="skills-panel">
-  {#if skillsStore.previewSkill}
-    <!-- ─── Skill Preview ───────────────────────────────── -->
-    <div class="preview">
-      <div class="preview-header">
-        <button class="back-btn" onclick={() => skillsStore.closePreview()}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-        </button>
-        <div class="preview-title">
-          <span class="preview-name">{skillsStore.previewSkill.name}</span>
-          <span class="preview-cmd">{skillsStore.getSlashCommand(skillsStore.previewSkill)}</span>
-        </div>
-        <button
-          class="copy-btn"
-          title="Copy command"
-          onclick={() => copyCommand(skillsStore.previewSkill!)}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        </button>
+{#snippet groupedList(grouped: Map<string, CustomSkill[]>, prefix: string, showOrigin: boolean)}
+  {#each [...grouped] as [subdir, skills] (subdir)}
+    {#if subdir}
+      <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+      <div class="group-header" onclick={() => toggleGroup(prefix + ':' + subdir)}>
+        <svg class="chevron" class:collapsed={isGroupCollapsed(prefix + ':' + subdir)} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        <span class="group-label">{groupLabel(subdir)}</span>
+        <span class="count">{skills.length}</span>
       </div>
-      <div class="preview-meta">
-        <span class="badge" class:user={skillsStore.previewSkill.scope === 'user'} class:project={skillsStore.previewSkill.scope === 'project'}>
-          {skillsStore.previewSkill.scope}
-        </span>
-        <span class="preview-path">{skillsStore.getRelativePath(skillsStore.previewSkill, workspaceStore.active?.path)}</span>
+    {/if}
+    {#if !subdir || !isGroupCollapsed(prefix + ':' + subdir)}
+      {#each skills as skill (skill.filePath)}
+        {@render skillItem(skill, showOrigin)}
+      {/each}
+    {/if}
+  {/each}
+{/snippet}
+
+{#snippet skillItem(skill: CustomSkill, showOrigin: boolean)}
+  <div class="custom-skill-item">
+    <button class="skill-body" onclick={() => useSkill(skill)} title="Insert into input">
+      <div class="cmd-row">
+        <span class="cmd-name">/{skill.name}</span>
+        {#if showOrigin && skill.relativeTo !== workspaceStore.active?.path}
+          <span class="cmd-origin" title={skill.relativeTo}>
+            {skill.relativeTo.split('/').pop()}
+          </span>
+        {/if}
       </div>
-      <div class="preview-body">
-        <pre>{skillsStore.previewContent}</pre>
-      </div>
+      <span class="cmd-desc">{skill.content.slice(0, 80).replace(/\n/g, ' ')}{skill.content.length > 80 ? '…' : ''}</span>
+      {#if showOrigin}
+        <span class="cmd-path">{skillsStore.getRelativePath(skill, workspaceStore.active?.path)}</span>
+      {/if}
+    </button>
+    <div class="skill-actions">
+      <button class="action-btn" title="Preview" onclick={() => openPreview(skill)}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <button class="action-btn" title="Copy command" onclick={() => copyCommand(skill)}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
     </div>
-  {:else}
+  </div>
+{/snippet}
+
+<div class="skills-panel">
     <!-- ─── Scope Toggle ────────────────────────────────── -->
     <div class="scope-bar">
       <button
@@ -82,71 +124,85 @@
     {#if skillsStore.loading}
       <div class="loading"><div class="spinner"></div></div>
     {:else}
-      <!-- ─── Custom Slash Commands (User) ──────────────── -->
-      {#if skillsStore.userCustomSkills.length > 0}
+      <!-- ─── Project Skills (.claude/skills/) ─────────── -->
+      {#if skillsStore.projectSkills.length > 0}
         <div class="section">
           <div class="section-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <span class="kind-badge skill">Skills</span>
+            <span class="count">{skillsStore.projectSkills.length}</span>
+          </div>
+          {@render groupedList(skillsStore.projectSkillsGrouped, 'p-skill', true)}
+        </div>
+      {/if}
+
+      <!-- ─── Project Agents (.claude/agents/) ─────────── -->
+      {#if skillsStore.projectAgents.length > 0}
+        <div class="section">
+          <div class="section-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span class="kind-badge agent">Agents</span>
+            <span class="count">{skillsStore.projectAgents.length}</span>
+          </div>
+          {@render groupedList(skillsStore.projectAgentsGrouped, 'p-agent', true)}
+        </div>
+      {/if}
+
+      <!-- ─── Project Commands (.claude/commands/) ──────── -->
+      {#if skillsStore.projectCommands.length > 0}
+        <div class="section">
+          <div class="section-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>
+            <span class="kind-badge command">Commands</span>
+            <span class="count">{skillsStore.projectCommands.length}</span>
+          </div>
+          {@render groupedList(skillsStore.projectCommandsGrouped, 'p-cmd', true)}
+        </div>
+      {/if}
+
+      <!-- ─── User Skills/Agents/Commands ──────────────── -->
+      {#if skillsStore.userSkills.length > 0}
+        <div class="section">
+          <div class="section-label user-section">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            User Skills
+            <span class="count">{skillsStore.userSkills.length}</span>
+          </div>
+          {@render groupedList(skillsStore.userSkillsGrouped, 'u-skill', false)}
+        </div>
+      {/if}
+
+      {#if skillsStore.userAgents.length > 0}
+        <div class="section">
+          <div class="section-label user-section">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            User Agents
+            <span class="count">{skillsStore.userAgents.length}</span>
+          </div>
+          {@render groupedList(skillsStore.userAgentsGrouped, 'u-agent', false)}
+        </div>
+      {/if}
+
+      {#if skillsStore.userCommands.length > 0}
+        <div class="section">
+          <div class="section-label user-section">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
             User Commands
-            <span class="count">{skillsStore.userCustomSkills.length}</span>
+            <span class="count">{skillsStore.userCommands.length}</span>
           </div>
-          {#each skillsStore.userCustomSkills as skill (skill.filePath)}
-            <div class="custom-skill-item">
-              <button class="skill-body" onclick={() => openPreview(skill)}>
-                <span class="cmd-name">/{skill.name}</span>
-                <span class="cmd-desc">{skill.content.slice(0, 80).replace(/\n/g, ' ')}{skill.content.length > 80 ? '...' : ''}</span>
-              </button>
-              <div class="skill-actions">
-                <button class="action-btn" title="Copy command" onclick={() => copyCommand(skill)}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                </button>
-              </div>
-            </div>
-          {/each}
+          {@render groupedList(skillsStore.userCommandsGrouped, 'u-cmd', false)}
         </div>
       {/if}
 
-      <!-- ─── Custom Slash Commands (Project) ───────────── -->
-      {#if skillsStore.projectCustomSkills.length > 0}
-        <div class="section">
-          <div class="section-label">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            Project Commands
-            <span class="count">{skillsStore.projectCustomSkills.length}</span>
-          </div>
-          {#each skillsStore.projectCustomSkills as skill (skill.filePath)}
-            <div class="custom-skill-item">
-              <button class="skill-body" onclick={() => openPreview(skill)}>
-                <div class="cmd-row">
-                  <span class="cmd-name">/{skill.name}</span>
-                  {#if skill.relativeTo !== workspaceStore.active?.path}
-                    <span class="cmd-origin" title={skill.relativeTo}>
-                      {skill.relativeTo.split('/').pop()}
-                    </span>
-                  {/if}
-                </div>
-                <span class="cmd-desc">{skill.content.slice(0, 80).replace(/\n/g, ' ')}{skill.content.length > 80 ? '...' : ''}</span>
-                <span class="cmd-path">{skillsStore.getRelativePath(skill, workspaceStore.active?.path)}</span>
-              </button>
-              <div class="skill-actions">
-                <button class="action-btn" title="Copy command" onclick={() => copyCommand(skill)}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                </button>
-              </div>
-            </div>
-          {/each}
-        </div>
-      {/if}
-
-      <!-- ─── No custom commands found ──────────────────── -->
+      <!-- ─── No custom skills found ────────────────────── -->
       {#if skillsStore.customSkills.length === 0}
         <div class="empty-custom">
           <div class="empty-icon">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>
           </div>
-          <p class="empty-title">No Custom Commands</p>
+          <p class="empty-title">No Skills Found</p>
           <p class="empty-desc">
-            Add <code>.md</code> files to <code>.claude/commands/</code> in your project or <code>~/.claude/commands/</code> globally.
+            Add <code>.md</code> files to <code>.claude/commands/</code>, <code>.claude/skills/</code>, or <code>.claude/agents/</code> in your project.
           </p>
         </div>
       {/if}
@@ -201,7 +257,6 @@
         </div>
       {/if}
     {/if}
-  {/if}
 </div>
 
 <style>
@@ -241,10 +296,33 @@
     background: #262626; color: #999; font-size: 9px;
     padding: 1px 5px; border-radius: 8px; font-weight: 500;
   }
+  .kind-badge {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .kind-badge.skill { color: #a6e3a1; }
+  .kind-badge.agent { color: #89b4fa; }
+  .kind-badge.command { color: #cba6f7; }
+  .user-section { color: #585b70; }
+
+  /* ── Group headers (subdir folders within commands/) ── */
+  .group-header {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 10px; margin: 4px 0 2px;
+    border-radius: 5px; cursor: pointer;
+    font-size: 11px; font-weight: 600; color: #7f849c;
+    transition: background 120ms ease;
+  }
+  .group-header:hover { background: #1a1a1a; color: #a6adc8; }
+  .group-label { flex: 1; min-width: 0; }
+  .chevron {
+    transition: transform 150ms ease; flex-shrink: 0;
+  }
+  .chevron.collapsed { transform: rotate(-90deg); }
 
   /* ── Custom skill items ── */
   .custom-skill-item {
-    display: flex; align-items: flex-start; gap: 4px;
+    display: flex; align-items: flex-start; gap: 2px;
     border-radius: 6px; transition: background 120ms ease;
   }
   .custom-skill-item:hover { background: #1a1a1a; }
@@ -276,13 +354,14 @@
   }
 
   .skill-actions {
-    display: flex; align-items: center; padding: 8px 6px 0 0;
+    display: flex; align-items: center; gap: 2px;
+    padding: 8px 4px 0 0;
     opacity: 0; transition: opacity 120ms ease;
   }
   .custom-skill-item:hover .skill-actions { opacity: 1; }
 
   .action-btn {
-    width: 26px; height: 26px; border: none; border-radius: 4px;
+    width: 24px; height: 24px; border: none; border-radius: 4px;
     background: transparent; color: #666; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     transition: all 120ms ease;
@@ -342,59 +421,4 @@
     transform: translateX(16px); background: #c084fc;
   }
 
-  /* ── Preview ── */
-  .preview { display: flex; flex-direction: column; height: 100%; }
-
-  .preview-header {
-    display: flex; align-items: center; gap: 8px;
-    padding: 0 0 12px; border-bottom: 1px solid #1e1e1e;
-  }
-  .back-btn {
-    width: 28px; height: 28px; border: none; border-radius: 6px;
-    background: #1a1a1a; color: #999; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    transition: all 120ms ease; flex-shrink: 0;
-  }
-  .back-btn:hover { background: #262626; color: #e6e6e6; }
-
-  .preview-title { flex: 1; min-width: 0; }
-  .preview-name {
-    display: block; font-size: 14px; font-weight: 600; color: #e6e6e6;
-  }
-  .preview-cmd {
-    display: block; font-size: 11px; color: #c084fc; margin-top: 2px;
-    font-family: 'D2Coding', 'JetBrains Mono', monospace;
-  }
-
-  .copy-btn {
-    width: 28px; height: 28px; border: none; border-radius: 6px;
-    background: #1a1a1a; color: #999; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    transition: all 120ms ease; flex-shrink: 0;
-  }
-  .copy-btn:hover { background: #262626; color: #e6e6e6; }
-
-  .preview-meta {
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 0 8px; font-size: 11px;
-  }
-  .badge {
-    font-size: 10px; font-weight: 600; text-transform: uppercase;
-    padding: 2px 6px; border-radius: 4px; letter-spacing: 0.04em;
-  }
-  .badge.user { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
-  .badge.project { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
-  .preview-path {
-    color: #555; font-family: 'D2Coding', 'JetBrains Mono', monospace;
-    font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-
-  .preview-body {
-    flex: 1; overflow-y: auto; padding: 12px 0;
-  }
-  .preview-body pre {
-    font-size: 12px; line-height: 1.6; color: #ccc; margin: 0;
-    white-space: pre-wrap; word-break: break-word;
-    font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
-  }
 </style>

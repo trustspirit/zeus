@@ -2,10 +2,8 @@
   import { onMount, tick } from 'svelte'
   import { terminalStore } from '../stores/terminal.svelte.js'
   import { uiStore } from '../stores/ui.svelte.js'
-  import InputBar from './InputBar.svelte'
 
   let outputEl: HTMLDivElement
-  let inputBarRef = $state<InputBar | undefined>(undefined)
 
   // Resize observer — refit terminal when container size changes
   onMount(() => {
@@ -18,7 +16,7 @@
     return () => observer.disconnect()
   })
 
-  // When activeId changes or view switches to terminal, fit and focus input
+  // When activeId changes or view switches to terminal, fit and focus xterm
   $effect(() => {
     const id = terminalStore.activeId
     const view = uiStore.activeView
@@ -29,8 +27,7 @@
             const size = terminalStore.fitActive()
             if (size) uiStore.termSize = `${size.cols}x${size.rows}`
           } catch { /* terminal may not be attached yet */ }
-          // Focus the input bar instead of xterm
-          inputBarRef?.focus()
+          terminalStore.focusActive()
         })
       })
     }
@@ -38,7 +35,6 @@
 </script>
 
 <div class="terminal-area" class:hidden={uiStore.activeView !== 'terminal'}>
-  <!-- Output display (xterm, read-only) -->
   <div class="output-region" bind:this={outputEl}>
     {#each terminalStore.sessions as session (session.id)}
       <div
@@ -48,11 +44,6 @@
       ></div>
     {/each}
   </div>
-
-  <!-- Input bar -->
-  {#if terminalStore.activeSession}
-    <InputBar bind:this={inputBarRef} />
-  {/if}
 </div>
 
 <style>
@@ -69,7 +60,6 @@
     display: none;
   }
 
-  /* Output region takes all available space above InputBar */
   .output-region {
     flex: 1;
     position: relative;
@@ -81,16 +71,12 @@
     position: absolute;
     inset: 0;
     display: none;
-    padding: 8px 4px 0 8px;
+    padding: 8px 4px 4px 8px;
   }
   .terminal-wrapper.active { display: block; }
 
   .terminal-wrapper :global(.xterm) {
     height: 100%;
     padding: 0 8px;
-  }
-  /* Hide xterm cursor since input goes through InputBar */
-  .terminal-wrapper :global(.xterm-cursor-layer) {
-    opacity: 0.3;
   }
 </style>

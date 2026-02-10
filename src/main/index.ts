@@ -22,11 +22,19 @@ interface Workspace {
   lastOpened: number
 }
 
+interface SavedSession {
+  sessionId: string
+  title: string
+  workspacePath: string
+  lastUsed: number
+}
+
 interface AppStore {
   workspaces: Workspace[]
   lastWorkspace: string | null
   idePreference: string
   windowBounds: { x?: number; y?: number; width: number; height: number } | null
+  savedSessions?: SavedSession[]
 }
 
 interface IDEDef {
@@ -393,7 +401,12 @@ function registerIPC(): void {
   })
 
   ipcMain.on('terminal:resize', (_, { id, cols, rows }: { id: number; cols: number; rows: number }) => {
-    terminals.get(id)?.pty.resize(cols, rows)
+    try {
+      terminals.get(id)?.pty.resize(cols, rows)
+    } catch (e) {
+      // [R1] PTY may already be gone — ignore resize errors
+      console.warn(`[zeus] terminal:resize failed for id=${id}:`, e)
+    }
   })
 
   ipcMain.handle('terminal:kill', (_, id: number) => {
@@ -414,6 +427,11 @@ function registerIPC(): void {
   ipcMain.handle('ide:list', () => detectInstalledIDEs())
 
   ipcMain.handle('ide:open', (_, { ideCmd, workspacePath }: { ideCmd: string; workspacePath: string }) => {
+    // [S3] Only allow commands from our known IDE list to prevent arbitrary execution
+    const allowedCmds = new Set(IDE_LIST.map((ide) => ide.cmd))
+    if (!allowedCmds.has(ideCmd)) {
+      return { success: false, error: `Unknown IDE command: ${ideCmd}` }
+    }
     try {
       const child = spawn(ideCmd, [workspacePath], { detached: true, stdio: 'ignore', shell: true })
       child.unref()
@@ -473,11 +491,45 @@ function registerIPC(): void {
   ipcMain.handle('files:read', (_, filePath: string) => readFileContent(filePath))
   ipcMain.handle('files:write', (_, filePath: string, content: string) => writeFileContent(filePath, content))
 
+  // ── Saved Claude Sessions (per-workspace history) ──
+  ipcMain.handle('claude-session:list-saved', (_, workspacePath: string) => {
+    const sessions = store.savedSessions ?? []
+    return sessions
+      .filter((s) => s.workspacePath === workspacePath)
+      .sort((a, b) => b.lastUsed - a.lastUsed)
+  })
+
+  ipcMain.handle('claude-session:save', (_, session: { sessionId: string; title: string; workspacePath: string }) => {
+    if (!store.savedSessions) store.savedSessions = []
+    const existing = store.savedSessions.find((s) => s.sessionId === session.sessionId)
+    if (existing) {
+      existing.title = session.title
+      existing.lastUsed = Date.now()
+    } else {
+      store.savedSessions.push({ ...session, lastUsed: Date.now() })
+    }
+    // Keep max 50 sessions per workspace
+    const byWs = store.savedSessions.filter((s) => s.workspacePath === session.workspacePath)
+    if (byWs.length > 50) {
+      const oldest = byWs.sort((a, b) => a.lastUsed - b.lastUsed)[0]
+      store.savedSessions = store.savedSessions.filter((s) => s.sessionId !== oldest.sessionId)
+    }
+    saveStore(store)
+    return true
+  })
+
+  ipcMain.handle('claude-session:delete-saved', (_, sessionId: string) => {
+    if (!store.savedSessions) return true
+    store.savedSessions = store.savedSessions.filter((s) => s.sessionId !== sessionId)
+    saveStore(store)
+    return true
+  })
+
   // ── Claude Session (headless -p mode with stream-json) ──
   ipcMain.handle(
     'claude-session:send',
-    (_, conversationId: string, prompt: string, cwd: string) => {
-      return spawnClaudeSession(conversationId, prompt, cwd)
+    (_, conversationId: string, prompt: string, cwd: string, model?: string) => {
+      return spawnClaudeSession(conversationId, prompt, cwd, model)
     }
   )
 
@@ -486,6 +538,16 @@ function registerIPC(): void {
     if (session?.process) {
       session.process.kill('SIGINT')
     }
+    return true
+  })
+
+  // [B1] Clean up session entry when conversation is closed from renderer
+  ipcMain.handle('claude-session:close', (_, conversationId: string) => {
+    const session = claudeSessions.get(conversationId)
+    if (session?.process) {
+      try { session.process.kill('SIGINT') } catch { /* ignore */ }
+    }
+    claudeSessions.delete(conversationId)
     return true
   })
 }
@@ -551,35 +613,59 @@ function installMCPPackage(pkg: string): Promise<{ success: boolean; output?: st
   })
 }
 
+// ── Shared constants ──────────────────────────────────────────────────────────
+
+// [A3] Consolidated skip list — used by both skills scanner and markdown scanner
+const SKIP_DIRS = new Set([
+  'node_modules', '.git', '.hg', '.svn', 'dist', 'build', 'out',
+  '.next', '.nuxt', '.output', '__pycache__', 'venv', '.venv',
+  'target', 'vendor', '.idea', '.vscode', 'coverage', '.cache', '.turbo'
+])
+
 // ── Custom Skills Scanner ─────────────────────────────────────────────────────
 
+type SkillKind = 'command' | 'skill' | 'agent'
+
 interface CustomSkillEntry {
-  name: string // command name derived from filename (without .md)
+  name: string // command name derived from path (without .md), colon-separated for nested
   filename: string // e.g. "refactor.md"
   filePath: string // absolute path to the .md file
   scope: 'user' | 'project' // global ~/.claude/commands vs project .claude/commands
+  kind: SkillKind // which .claude/ subdirectory it came from
   relativeTo: string // workspace root or parent dir where .claude/ was found
   content: string // first 200 chars for description preview
+  subdir: string // subdirectory within commands/ (e.g. "workflow", "skills", or "")
 }
 
+/** The three .claude/ subdirectories we scan for skills */
+const SKILL_DIRS: { dir: string; kind: SkillKind }[] = [
+  { dir: 'commands', kind: 'command' },
+  { dir: 'skills', kind: 'skill' },
+  { dir: 'agents', kind: 'agent' }
+]
+
 /**
- * Scan for custom slash commands (.md files in .claude/commands/) from:
- * 1. Global: ~/.claude/commands/
- * 2. Project root: <wsPath>/.claude/commands/
- * 3. Child directories (depth-limited): <wsPath>/<child>/.claude/commands/
+ * Scan for custom skills (.md files) from:
+ * 1. Global: ~/.claude/{commands,skills,agents}/
+ * 2. Project root: <wsPath>/.claude/{commands,skills,agents}/
+ * 3. Child directories (depth-limited): <wsPath>/<child>/.claude/{commands,skills,agents}/
  */
 function scanCustomSkills(wsPath: string): CustomSkillEntry[] {
   const results: CustomSkillEntry[] = []
 
-  // 1. Global user commands (always)
-  const globalCmdsDir = path.join(os.homedir(), '.claude', 'commands')
-  collectCommandFiles(globalCmdsDir, 'user', os.homedir(), results)
+  // 1. Global user commands/skills/agents (always)
+  for (const { dir, kind } of SKILL_DIRS) {
+    const globalDir = path.join(os.homedir(), '.claude', dir)
+    collectCommandFiles(globalDir, 'user', kind, os.homedir(), results)
+  }
 
   // 2 & 3: Only if workspace path is provided
   if (wsPath && fs.existsSync(wsPath)) {
     // 2. Project root
-    const projectCmdsDir = path.join(wsPath, '.claude', 'commands')
-    collectCommandFiles(projectCmdsDir, 'project', wsPath, results)
+    for (const { dir, kind } of SKILL_DIRS) {
+      const projectDir = path.join(wsPath, '.claude', dir)
+      collectCommandFiles(projectDir, 'project', kind, wsPath, results)
+    }
 
     // 3. Recurse into child directories (depth-limited)
     scanChildrenForCommands(wsPath, results, 0)
@@ -588,33 +674,70 @@ function scanCustomSkills(wsPath: string): CustomSkillEntry[] {
   return results
 }
 
+/**
+ * Recursively collect .md files from a commands/ directory.
+ * Subdirectories become colon-separated command prefixes:
+ *   commands/foo.md           → name = "foo"
+ *   commands/workflow/bar.md  → name = "workflow:bar"
+ *   commands/skills/dev/x.md  → name = "skills:dev:x"
+ */
 function collectCommandFiles(
   cmdsDir: string,
   scope: 'user' | 'project',
+  kind: SkillKind,
   relativeTo: string,
   results: CustomSkillEntry[]
 ): void {
+  collectCommandFilesRecursive(cmdsDir, cmdsDir, scope, kind, relativeTo, results, 0)
+}
+
+function collectCommandFilesRecursive(
+  baseDir: string,
+  currentDir: string,
+  scope: 'user' | 'project',
+  kind: SkillKind,
+  relativeTo: string,
+  results: CustomSkillEntry[],
+  depth: number
+): void {
+  if (depth > 5) return // safety limit
   try {
-    if (!fs.existsSync(cmdsDir) || !fs.statSync(cmdsDir).isDirectory()) return
-    const entries = fs.readdirSync(cmdsDir, { withFileTypes: true })
+    if (!fs.existsSync(currentDir) || !fs.statSync(currentDir).isDirectory()) return
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true })
+
     for (const entry of entries) {
-      if (!entry.isFile()) continue
-      if (!/\.md$/i.test(entry.name)) continue
-      const filePath = path.join(cmdsDir, entry.name)
-      // Avoid duplicates
-      if (results.some((r) => r.filePath === filePath)) continue
-      try {
-        const raw = fs.readFileSync(filePath, 'utf-8')
-        const name = entry.name.replace(/\.md$/i, '')
-        results.push({
-          name,
-          filename: entry.name,
-          filePath,
-          scope,
-          relativeTo,
-          content: raw.slice(0, 200)
-        })
-      } catch { /* unreadable file */ }
+      const fullPath = path.join(currentDir, entry.name)
+
+      if (entry.isFile() && /\.md$/i.test(entry.name)) {
+        // Avoid duplicates
+        if (results.some((r) => r.filePath === fullPath)) continue
+
+        // Build colon-separated name from relative path within the base dir
+        const relFromBase = path.relative(baseDir, fullPath)
+        const nameWithoutExt = relFromBase.replace(/\.md$/i, '')
+        const colonName = nameWithoutExt.split(path.sep).join(':')
+
+        // Subdirectory label (folder within base dir, empty for top-level)
+        const dirParts = nameWithoutExt.split(path.sep)
+        const subdir = dirParts.length > 1 ? dirParts.slice(0, -1).join('/') : ''
+
+        try {
+          const raw = fs.readFileSync(fullPath, 'utf-8')
+          results.push({
+            name: colonName,
+            filename: entry.name,
+            filePath: fullPath,
+            scope,
+            kind,
+            relativeTo,
+            content: raw.slice(0, 200),
+            subdir
+          })
+        } catch { /* unreadable file */ }
+      } else if (entry.isDirectory() && !entry.name.startsWith('.')) {
+        // Recurse into subdirectories
+        collectCommandFilesRecursive(baseDir, fullPath, scope, kind, relativeTo, results, depth + 1)
+      }
     }
   } catch { /* directory access error */ }
 }
@@ -630,11 +753,6 @@ function scanChildrenForCommands(
   depth: number
 ): void {
   if (depth > 3) return
-  const SKIP_DIRS = new Set([
-    'node_modules', '.git', '.hg', '.svn', 'dist', 'build', 'out',
-    '.next', '.nuxt', '.output', '__pycache__', 'venv', '.venv',
-    'target', 'vendor', '.idea', '.vscode', 'coverage'
-  ])
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true })
     for (const entry of entries) {
@@ -644,10 +762,12 @@ function scanChildrenForCommands(
 
       const childPath = path.join(dir, entry.name)
 
-      // Check if this child has .claude/commands/
-      const cmdsDir = path.join(childPath, '.claude', 'commands')
-      if (fs.existsSync(cmdsDir)) {
-        collectCommandFiles(cmdsDir, 'project', childPath, results)
+      // Check if this child has .claude/{commands,skills,agents}/
+      for (const { dir: subDir, kind } of SKILL_DIRS) {
+        const cmdsDir = path.join(childPath, '.claude', subDir)
+        if (fs.existsSync(cmdsDir)) {
+          collectCommandFiles(cmdsDir, 'project', kind, childPath, results)
+        }
       }
 
       // Recurse deeper
@@ -666,56 +786,149 @@ interface MdFileEntry {
   dir: string
 }
 
+/**
+ * List only Claude Code related .md files:
+ *   - .claude/ directories (commands, skills, agents, docs, etc.)
+ *   - Also CLAUDE.md / AGENTS.md / agent.md at project roots
+ * Scans workspace root and child directories.
+ */
 function listMarkdownFiles(dirPath: string): MdFileEntry[] {
   const results: MdFileEntry[] = []
+  if (!dirPath || !fs.existsSync(dirPath)) return results
+
   try {
-    collectMdFiles(dirPath, dirPath, results, 0)
+    // 1. Collect root-level Claude-related .md files (CLAUDE.md, AGENTS.md, agent.md, etc.)
+    collectClaudeRootMd(dirPath, dirPath, results)
+
+    // 2. Scan .claude/ directory at workspace root
+    const rootClaudeDir = path.join(dirPath, '.claude')
+    if (fs.existsSync(rootClaudeDir)) {
+      collectAllMdInDir(rootClaudeDir, dirPath, results, 0)
+    }
+
+    // 3. Scan child directories for their .claude/ dirs
+    scanChildrenForClaudeMd(dirPath, dirPath, results, 0)
   } catch { /* ignore */ }
-  // Sort by directory first, then by name
+
   return results.sort((a, b) => {
     if (a.dir !== b.dir) return a.dir.localeCompare(b.dir)
     return a.name.localeCompare(b.name)
   })
 }
 
-const MD_SKIP_DIRS = new Set([
-  'node_modules', '.git', '.hg', '.svn', 'dist', 'build', 'out',
-  '.next', '.nuxt', '.output', '__pycache__', 'venv', '.venv',
-  'target', 'vendor', 'coverage', '.cache', '.turbo'
+/** Filenames at project root that are Claude Code related */
+const CLAUDE_ROOT_FILES = new Set([
+  'claude.md', 'agents.md', 'agent.md', 'claude_instructions.md',
+  'claudeignore', '.claudeignore'
 ])
 
-function collectMdFiles(
-  rootDir: string,
-  dir: string,
-  results: MdFileEntry[],
-  depth: number
-): void {
-  if (depth > 5) return // generous depth for docs
+/** Collect Claude-related .md files at a project root level */
+function collectClaudeRootMd(dir: string, rootDir: string, results: MdFileEntry[]): void {
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true })
     for (const entry of entries) {
-      if (entry.name.startsWith('.') || MD_SKIP_DIRS.has(entry.name)) continue
-      const fullPath = path.join(dir, entry.name)
-      if (entry.isFile() && /\.md$/i.test(entry.name)) {
-        const stat = fs.statSync(fullPath)
-        const relativePath = path.relative(rootDir, fullPath)
-        const relDir = path.relative(rootDir, dir) || '.'
-        results.push({
-          name: entry.name,
-          path: fullPath,
-          size: stat.size,
-          relativePath,
-          dir: relDir
-        })
-      } else if (entry.isDirectory()) {
-        collectMdFiles(rootDir, fullPath, results, depth + 1)
+      if (!entry.isFile()) continue
+      if (CLAUDE_ROOT_FILES.has(entry.name.toLowerCase())) {
+        addMdEntry(path.join(dir, entry.name), rootDir, results)
       }
     }
-  } catch { /* permission error, etc. */ }
+  } catch { /* ignore */ }
+}
+
+/** Recursively collect ALL .md files inside a directory (for .claude/ subtree) */
+function collectAllMdInDir(
+  dir: string,
+  rootDir: string,
+  results: MdFileEntry[],
+  depth: number
+): void {
+  if (depth > 8) return
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name)
+      if (entry.isFile() && /\.md$/i.test(entry.name)) {
+        addMdEntry(fullPath, rootDir, results)
+      } else if (entry.isDirectory() && !entry.name.startsWith('.')) {
+        collectAllMdInDir(fullPath, rootDir, results, depth + 1)
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+/** Scan child directories for .claude/ dirs and root-level Claude .md files */
+function scanChildrenForClaudeMd(
+  dir: string,
+  rootDir: string,
+  results: MdFileEntry[],
+  depth: number
+): void {
+  if (depth > 3) return
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      if (entry.name.startsWith('.')) continue
+      if (SKIP_DIRS.has(entry.name)) continue
+
+      const childPath = path.join(dir, entry.name)
+
+      // Check for root-level Claude .md files in child dir
+      collectClaudeRootMd(childPath, rootDir, results)
+
+      // Check for .claude/ in child dir
+      const claudeDir = path.join(childPath, '.claude')
+      if (fs.existsSync(claudeDir)) {
+        collectAllMdInDir(claudeDir, rootDir, results, 0)
+      }
+
+      // Recurse deeper
+      scanChildrenForClaudeMd(childPath, rootDir, results, depth + 1)
+    }
+  } catch { /* ignore */ }
+}
+
+/** Helper: add a single .md file entry, deduplicating by path */
+function addMdEntry(fullPath: string, rootDir: string, results: MdFileEntry[]): void {
+  if (results.some((r) => r.path === fullPath)) return
+  try {
+    const stat = fs.statSync(fullPath)
+    const relativePath = path.relative(rootDir, fullPath)
+    const relDir = path.dirname(relativePath)
+    results.push({
+      name: path.basename(fullPath),
+      path: fullPath,
+      size: stat.size,
+      relativePath,
+      dir: relDir === '.' ? '.' : relDir
+    })
+  } catch { /* ignore */ }
+}
+
+/**
+ * [S1] Validate that a file path is within a known workspace or home dir.
+ * Prevents arbitrary file access via path traversal from the renderer.
+ */
+function isPathAllowed(filePath: string): boolean {
+  const resolved = path.resolve(filePath)
+  const home = os.homedir()
+
+  // Allow files within any registered workspace
+  for (const ws of store.workspaces) {
+    if (resolved.startsWith(ws.path + path.sep) || resolved === ws.path) return true
+  }
+  // Allow files within home directory (for global .claude configs, etc.)
+  if (resolved.startsWith(home + path.sep) || resolved === home) return true
+
+  return false
 }
 
 function readFileContent(filePath: string): string | null {
   try {
+    if (!isPathAllowed(filePath)) {
+      console.warn('[zeus] readFileContent blocked — path outside allowed scope:', filePath)
+      return null
+    }
     return fs.readFileSync(filePath, 'utf-8')
   } catch {
     return null
@@ -724,6 +937,10 @@ function readFileContent(filePath: string): string | null {
 
 function writeFileContent(filePath: string, content: string): boolean {
   try {
+    if (!isPathAllowed(filePath)) {
+      console.warn('[zeus] writeFileContent blocked — path outside allowed scope:', filePath)
+      return false
+    }
     fs.writeFileSync(filePath, content, 'utf-8')
     return true
   } catch {
@@ -733,17 +950,37 @@ function writeFileContent(filePath: string, content: string): boolean {
 
 // ── Claude Session (headless mode) ────────────────────────────────────────────
 
+let cachedClaudePath: string | null = null
+
 function getClaudeCliPath(): string {
-  // Attempt to find claude in common locations
-  try {
-    const whichCmd = process.platform === 'win32' ? 'where claude' : 'which claude'
-    return execSync(whichCmd, { encoding: 'utf-8', timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'] }).trim()
-  } catch {
-    return 'claude'
+  if (cachedClaudePath) return cachedClaudePath
+
+  // Try login shell first (ensures full PATH on macOS GUI apps)
+  const shell = process.env.SHELL || '/bin/zsh'
+  const strategies = [
+    () => execSync(`${shell} -l -c 'which claude'`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim(),
+    () => {
+      const whichCmd = process.platform === 'win32' ? 'where claude' : 'which claude'
+      return execSync(whichCmd, { encoding: 'utf-8', timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'] }).trim()
+    }
+  ]
+
+  for (const strategy of strategies) {
+    try {
+      const result = strategy()
+      if (result) {
+        cachedClaudePath = result
+        console.log('[zeus] Claude CLI found at:', result)
+        return result
+      }
+    } catch { /* try next strategy */ }
   }
+
+  console.warn('[zeus] Claude CLI not found in PATH, falling back to "claude"')
+  return 'claude'
 }
 
-function spawnClaudeSession(conversationId: string, prompt: string, cwd: string): boolean {
+function spawnClaudeSession(conversationId: string, prompt: string, cwd: string, model?: string): boolean {
   // Get or create session state
   let session = claudeSessions.get(conversationId)
   if (!session) {
@@ -751,21 +988,33 @@ function spawnClaudeSession(conversationId: string, prompt: string, cwd: string)
     claudeSessions.set(conversationId, session)
   }
 
-  // Kill any still-running process for this conversation
+  // [R2] Kill any still-running process for this conversation
   if (session.process) {
-    try { session.process.kill('SIGINT') } catch { /* ignore */ }
+    const oldProcess = session.process
     session.process = null
+    try {
+      oldProcess.kill('SIGINT')
+      // Give the process a moment to die — avoids port/file conflicts
+      oldProcess.removeAllListeners()
+    } catch { /* ignore */ }
   }
 
-  // Build args: claude -p "prompt" --output-format stream-json [--resume sessionId]
+  // Build args: claude -p "prompt" --output-format stream-json --verbose [--model x] [--resume sessionId]
   const claudePath = getClaudeCliPath()
   const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose']
 
+  if (model) {
+    args.push('--model', model)
+  }
+
   if (session.sessionId) {
-    args.push('--resume', session.sessionId)
+    args.push('--resume', session.sessionId, '--continue')
   }
 
   const effectiveCwd = cwd && fs.existsSync(cwd) ? cwd : os.homedir()
+
+  console.log(`[zeus] Spawning Claude session ${conversationId}:`, claudePath, args.map((a, i) => i === 1 ? `"${a.slice(0, 60)}..."` : a).join(' '))
+  console.log(`[zeus] CWD: ${effectiveCwd}`)
 
   // Spawn claude process
   const child = spawn(claudePath, args, {
@@ -778,12 +1027,20 @@ function spawnClaudeSession(conversationId: string, prompt: string, cwd: string)
     stdio: ['pipe', 'pipe', 'pipe']
   })
 
+  // CRITICAL: Close stdin immediately — Claude with -p doesn't need it.
+  // Leaving stdin open causes Claude to hang waiting for potential piped input.
+  child.stdin?.end()
+
   session.process = child
+
+  console.log(`[zeus] Claude process PID: ${child.pid}`)
 
   let buffer = ''
 
   child.stdout?.on('data', (chunk: Buffer) => {
-    buffer += chunk.toString()
+    const text = chunk.toString()
+    buffer += text
+
     const lines = buffer.split('\n')
     buffer = lines.pop()! // keep incomplete last line
 
@@ -811,6 +1068,7 @@ function spawnClaudeSession(conversationId: string, prompt: string, cwd: string)
 
   child.stderr?.on('data', (chunk: Buffer) => {
     const text = chunk.toString()
+    console.log(`[zeus] Claude stderr [${conversationId}]:`, text.slice(0, 200))
     // stderr can contain progress/debug info — forward as stderr event
     mainWindow?.webContents.send('claude-session:event', {
       id: conversationId,
@@ -819,6 +1077,7 @@ function spawnClaudeSession(conversationId: string, prompt: string, cwd: string)
   })
 
   child.on('close', (code) => {
+    console.log(`[zeus] Claude process closed [${conversationId}] exit=${code}`)
     // Process remaining buffer
     if (buffer.trim()) {
       try {
@@ -843,6 +1102,7 @@ function spawnClaudeSession(conversationId: string, prompt: string, cwd: string)
   })
 
   child.on('error', (err) => {
+    console.error(`[zeus] Claude spawn error [${conversationId}]:`, err.message)
     mainWindow?.webContents.send('claude-session:event', {
       id: conversationId,
       event: { type: 'error', text: err.message }

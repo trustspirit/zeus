@@ -117,7 +117,7 @@ class MarkdownStore {
   /** Release content of all tabs except the given active id */
   private _releaseInactiveContent(activeId: string) {
     this.openTabs = this.openTabs.map((t) =>
-      t.id !== activeId ? { ...t, content: null as unknown as string } : t
+      t.id !== activeId ? { ...t, content: null } : t
     )
   }
 

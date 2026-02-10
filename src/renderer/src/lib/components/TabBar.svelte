@@ -3,7 +3,7 @@
   import { claudeSessionStore } from '../stores/claude-session.svelte.js'
   import { markdownStore } from '../stores/markdown.svelte.js'
   import { uiStore } from '../stores/ui.svelte.js'
-  import IconBolt from './icons/IconBolt.svelte'
+  import IconClaude from './icons/IconClaude.svelte'
   import IconTerminal from './icons/IconTerminal.svelte'
 
   let tabBarEl: HTMLDivElement
@@ -11,6 +11,8 @@
   function switchToTerminal(id: number) {
     terminalStore.switchTo(id)
     uiStore.activeView = 'terminal'
+    // Focus the xterm instance after view switch
+    requestAnimationFrame(() => terminalStore.focusActive())
   }
 
   function switchToClaude(id: string) {
@@ -100,7 +102,7 @@
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
       <div class="tab-body" onclick={() => switchToClaude(conv.id)}>
         <span class="tab-icon claude">
-          <IconBolt size={14} />
+          <IconClaude size={14} />
         </span>
         <span class="tab-title">{conv.title}</span>
         {#if conv.isStreaming}

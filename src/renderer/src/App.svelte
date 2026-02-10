@@ -42,6 +42,12 @@
     terminalStore.listen()
     claudeSessionStore.listen()
 
+    // Auto-open Claude Code for the active workspace (default view)
+    if (workspaceStore.active && claudeStore.installed) {
+      await claudeSessionStore.loadSaved(workspaceStore.active.path)
+      launchClaudeConversation(workspaceStore.active.path)
+    }
+
     unsubs.push(
       window.zeus.onAction('new-terminal', () => newTerminal()),
       window.zeus.onAction('run-claude', () => runClaude()),
@@ -93,9 +99,32 @@
   }
 
   function launchClaudeConversation(cwd: string) {
+    // Check if there's already an active Claude conversation for this workspace
+    const existing = claudeSessionStore.conversations.find((c) => c.workspacePath === cwd)
+    if (existing) {
+      claudeSessionStore.switchTo(existing.id)
+      return
+    }
     // Use headless mode: clean conversation UI with stream-json output
     claudeSessionStore.create(cwd)
   }
+
+  // When workspace changes, load saved sessions and auto-open Claude
+  let prevWorkspacePath: string | null = null
+  $effect(() => {
+    const ws = workspaceStore.active
+    if (ws && ws.path !== prevWorkspacePath) {
+      prevWorkspacePath = ws.path
+      claudeSessionStore.loadSaved(ws.path)
+      // Auto-open Claude conversation if none exist for this workspace
+      if (claudeStore.installed) {
+        const existingForWs = claudeSessionStore.conversations.find((c) => c.workspacePath === ws.path)
+        if (!existingForWs) {
+          launchClaudeConversation(ws.path)
+        }
+      }
+    }
+  })
 
   function openIDE() {
     if (!workspaceStore.active) {

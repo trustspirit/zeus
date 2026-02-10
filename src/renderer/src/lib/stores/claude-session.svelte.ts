@@ -1,4 +1,4 @@
-import type { ClaudeConversation, ClaudeMessage, ContentBlock, ClaudeStreamEvent } from '../types/index.js'
+import type { ClaudeConversation, ClaudeMessage, ContentBlock, ClaudeStreamEvent, SavedSession } from '../types/index.js'
 import { uiStore } from './ui.svelte.js'
 
 // ── Claude Session Store (headless -p mode) ──────────────────────────────────
@@ -64,6 +64,8 @@ function extractText(content: unknown): { text: string; blocks: ContentBlock[] }
 class ClaudeSessionStore {
   conversations = $state<ClaudeConversation[]>([])
   activeId = $state<string | null>(null)
+  /** Saved sessions for the current workspace (loaded on workspace switch) */
+  savedSessions = $state<SavedSession[]>([])
 
   activeConversation = $derived(
     this.activeId ? this.conversations.find((c) => c.id === this.activeId) ?? null : null
@@ -88,6 +90,11 @@ class ClaudeSessionStore {
     this._unsubDone?.()
   }
 
+  /** Load saved sessions for a workspace */
+  async loadSaved(workspacePath: string) {
+    this.savedSessions = await window.zeus.claudeSession.listSaved(workspacePath)
+  }
+
   /** Create a new conversation and switch to it. */
   create(workspacePath?: string): string {
     const id = `claude-${nextConvId++}`
@@ -107,6 +114,40 @@ class ClaudeSessionStore {
     this.activeId = id
     uiStore.activeView = 'claude'
     return id
+  }
+
+  /** Resume a saved session — creates a conversation with the existing sessionId */
+  resume(saved: SavedSession): string {
+    // Check if already open
+    const existing = this.conversations.find((c) => c.claudeSessionId === saved.sessionId)
+    if (existing) {
+      this.activeId = existing.id
+      uiStore.activeView = 'claude'
+      return existing.id
+    }
+
+    const id = `claude-${nextConvId++}`
+    const conversation: ClaudeConversation = {
+      id,
+      claudeSessionId: saved.sessionId,
+      title: saved.title,
+      workspacePath: saved.workspacePath,
+      messages: [],
+      isStreaming: false,
+      streamingContent: '',
+      streamingBlocks: []
+    }
+
+    this.conversations = [...this.conversations, conversation]
+    this.activeId = id
+    uiStore.activeView = 'claude'
+    return id
+  }
+
+  /** Delete a saved session from history */
+  async deleteSaved(sessionId: string) {
+    await window.zeus.claudeSession.deleteSaved(sessionId)
+    this.savedSessions = this.savedSessions.filter((s) => s.sessionId !== sessionId)
   }
 
   /** Send a user message and start streaming response. */
@@ -131,7 +172,8 @@ class ClaudeSessionStore {
     this.conversations = [...this.conversations]
 
     const cwd = conv.workspacePath || ''
-    await window.zeus.claudeSession.send(id, prompt, cwd)
+    const model = uiStore.selectedModel || 'sonnet'
+    await window.zeus.claudeSession.send(id, prompt, cwd, model)
   }
 
   /** Switch to a conversation. */
@@ -140,12 +182,15 @@ class ClaudeSessionStore {
     uiStore.activeView = 'claude'
   }
 
-  /** Close a conversation. */
+  /** Close a conversation and clean up main process session. */
   async close(id: string) {
     const conv = this.conversations.find((c) => c.id === id)
     if (conv?.isStreaming) {
       await window.zeus.claudeSession.abort(id)
     }
+
+    // [B1] Clean up main process session entry
+    await window.zeus.claudeSession.close(id)
 
     const idx = this.conversations.findIndex((c) => c.id === id)
     this.conversations = this.conversations.filter((c) => c.id !== id)
@@ -173,6 +218,17 @@ class ClaudeSessionStore {
 
   // ── Private Event Handlers ─────────────────────────────────────────────────
 
+  /** Throttled reactivity trigger — batch rapid streaming events into one update per frame */
+  private _reactivityPending = false
+  private _triggerReactivity() {
+    if (this._reactivityPending) return
+    this._reactivityPending = true
+    requestAnimationFrame(() => {
+      this._reactivityPending = false
+      this.conversations = [...this.conversations]
+    })
+  }
+
   private _handleEvent(id: string, event: ClaudeStreamEvent) {
     const conv = this.conversations.find((c) => c.id === id)
     if (!conv) return
@@ -184,7 +240,10 @@ class ClaudeSessionStore {
     }
 
     // Handle different event types from stream-json
+    // See: https://code.claude.com/docs/en/headless
+    // Event types: system, assistant, user, result
     if (event.type === 'assistant' && event.message?.content) {
+      // Assistant message snapshot — contains full content so far
       const { text, blocks } = extractText(event.message.content)
       conv.streamingContent = text
       conv.streamingBlocks = blocks
@@ -193,6 +252,10 @@ class ClaudeSessionStore {
       if (typeof event.result === 'string' && event.result) {
         conv.streamingContent = event.result
       }
+    } else if (event.type === 'system') {
+      // Session init event — nothing to display but captures session_id above
+    } else if (event.type === 'user') {
+      // Tool result event — could display tool outputs if needed
     } else if (event.type === 'raw' && typeof (event as Record<string, unknown>).text === 'string') {
       // Non-JSON output from claude
       conv.streamingContent += (event as Record<string, unknown>).text as string
@@ -200,14 +263,14 @@ class ClaudeSessionStore {
       const errText = typeof (event as Record<string, unknown>).text === 'string'
         ? (event as Record<string, unknown>).text as string
         : ''
-      // Only show real errors, not progress info
-      if (errText && !errText.startsWith('�') && !errText.includes('Thinking')) {
+      // Only show real errors, not progress/spinner output
+      if (errText && !errText.includes('\x1b[') && !errText.includes('Thinking')) {
         conv.streamingContent += `\n⚠️ ${errText}`
       }
     }
 
-    // Trigger reactivity
-    this.conversations = [...this.conversations]
+    // Trigger reactivity (throttled via rAF)
+    this._triggerReactivity()
   }
 
   private _handleDone(id: string, exitCode: number, sessionId?: string) {
@@ -251,6 +314,15 @@ class ClaudeSessionStore {
           ? firstUser.content.slice(0, 30) + '…'
           : firstUser.content
       }
+    }
+
+    // Auto-save session to history for resume
+    if (conv.claudeSessionId && conv.workspacePath) {
+      window.zeus.claudeSession.save({
+        sessionId: conv.claudeSessionId,
+        title: conv.title,
+        workspacePath: conv.workspacePath
+      }).then(() => this.loadSaved(conv.workspacePath!))
     }
 
     // Trigger reactivity

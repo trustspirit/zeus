@@ -8,6 +8,18 @@ export interface Toast {
 
 export type ActiveViewType = 'terminal' | 'doc' | 'claude'
 
+export interface ModelOption {
+  id: string      // value passed to --model
+  label: string   // display name
+  desc: string    // short description
+}
+
+export const AVAILABLE_MODELS: ModelOption[] = [
+  { id: 'sonnet', label: 'Sonnet', desc: 'Fast & balanced' },
+  { id: 'opus', label: 'Opus', desc: 'Most capable' },
+  { id: 'haiku', label: 'Haiku', desc: 'Fastest & lightest' }
+]
+
 class UIStore {
   sidebarCollapsed = $state(false)
   rightPanelOpen = $state(false)
@@ -18,6 +30,17 @@ class UIStore {
 
   /** Which kind of tab is showing in the main content area */
   activeView = $state<ActiveViewType>('terminal')
+
+  /** Selected Claude model alias */
+  selectedModel = $state<string>('sonnet')
+
+  /**
+   * When set, the active InputBar should adopt this text and focus.
+   * Incrementing `_prefillSeq` ensures reactivity even if the same text is set twice.
+   */
+  inputPrefill = $state<string | null>(null)
+  private _prefillSeq = $state(0)
+  get prefillSeq() { return this._prefillSeq }
 
   // Context menu
   contextMenuOpen = $state(false)
@@ -54,6 +77,17 @@ class UIStore {
   closeContextMenu() {
     this.contextMenuOpen = false
     this.contextMenuTarget = null
+  }
+
+  /** Prefill the active InputBar with text (e.g. a slash command). Adds trailing space. */
+  prefillInput(text: string) {
+    this.inputPrefill = text.endsWith(' ') ? text : text + ' '
+    this._prefillSeq++
+  }
+
+  /** Called by InputBar after consuming the prefill */
+  consumePrefill() {
+    this.inputPrefill = null
   }
 }
 

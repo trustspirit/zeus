@@ -90,6 +90,8 @@
   .doc-body {
     flex: 1; overflow-y: auto; padding: 24px 32px 48px;
     display: flex; justify-content: center;
+    user-select: text;
+    -webkit-user-select: text;
   }
 
   .markdown-content {
