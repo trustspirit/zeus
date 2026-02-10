@@ -125,30 +125,6 @@
             <h2>How can I help?</h2>
             <p class="welcome-sub">Ask about your codebase, write code, debug issues, or explore ideas.</p>
           </div>
-
-          <!-- Saved sessions -->
-          {#if claudeSessionStore.savedSessions.length > 0}
-            <div class="session-history">
-              <span class="history-label">Recent</span>
-              <div class="history-list">
-                {#each claudeSessionStore.savedSessions as saved (saved.sessionId)}
-                  <div class="history-item">
-                    <button class="history-resume" onclick={() => claudeSessionStore.resume(saved)}>
-                      <span class="history-title">{saved.title}</span>
-                      <span class="history-time">
-                        {new Date(saved.lastUsed).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                      </span>
-                    </button>
-                    <button
-                      class="history-delete"
-                      title="Delete"
-                      onclick={() => claudeSessionStore.deleteSaved(saved.sessionId)}
-                    >&times;</button>
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {/if}
         {/if}
 
         <!-- ── Messages ── -->
@@ -217,237 +193,134 @@
   .conversation-view {
     flex: 1; width: 100%; height: 100%;
     display: flex; flex-direction: column;
-    background: #0d0d0d; overflow: hidden;
+    background: #282c34; overflow: hidden;
     position: relative;
   }
   .conversation-view.hidden { display: none; }
 
   .view-drop-overlay {
-    position: absolute;
-    inset: 0;
-    z-index: 50;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(13, 13, 13, 0.85);
-    pointer-events: none;
+    position: absolute; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(40, 44, 52, 0.9); pointer-events: none;
   }
   .view-drop-box {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    padding: 40px 60px;
-    border: 2px dashed #4a85c4;
-    border-radius: 20px;
-    color: #4a85c4;
-    font-size: 16px;
-    font-weight: 600;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    padding: 40px 60px; border: 2px dashed #61afef; border-radius: 20px;
+    color: #61afef; font-size: 16px; font-weight: 600;
   }
 
-  .messages-scroll {
-    flex: 1; overflow-y: auto; overflow-x: hidden;
-  }
+  .messages-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; }
   .messages-scroll::-webkit-scrollbar { width: 5px; }
   .messages-scroll::-webkit-scrollbar-track { background: transparent; }
   .messages-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
-  .messages-scroll:hover::-webkit-scrollbar-thumb { background: #313244; }
+  .messages-scroll:hover::-webkit-scrollbar-thumb { background: #3e4451; }
 
   .messages-container {
     max-width: 780px; width: 100%;
     margin: 0 auto; padding: 20px 24px 0;
-    user-select: text;
-    -webkit-user-select: text;
+    user-select: text; -webkit-user-select: text;
   }
 
   .scroll-spacer { height: 24px; }
 
   /* ────────────────── Welcome ────────────────── */
-  .welcome {
-    text-align: center; padding: 72px 24px 40px;
-  }
+  .welcome { text-align: center; padding: 72px 24px 40px; }
   .welcome-icon {
     display: inline-flex; align-items: center; justify-content: center;
     width: 64px; height: 64px; border-radius: 20px;
-    background: rgba(203, 166, 247, 0.08);
-    color: #cba6f7; margin-bottom: 20px;
+    background: rgba(198, 120, 221, 0.1);
+    color: #c678dd; margin-bottom: 20px;
   }
   .welcome h2 {
-    font-size: 24px; font-weight: 600; color: #cdd6f4;
+    font-size: 24px; font-weight: 600; color: #abb2bf;
     margin: 0 0 8px; letter-spacing: -0.02em;
   }
-  .welcome-sub {
-    font-size: 14px; color: #585b70; margin: 0;
-    line-height: 1.5;
-  }
-
-  /* ────────────────── Session History ────────────────── */
-  .session-history {
-    max-width: 420px; margin: 0 auto; padding: 0 0 40px;
-  }
-  .history-label {
-    font-size: 11px; font-weight: 600; color: #404040;
-    text-transform: uppercase; letter-spacing: 0.06em;
-    display: block; margin-bottom: 8px; padding-left: 2px;
-  }
-  .history-list {
-    display: flex; flex-direction: column; gap: 2px;
-  }
-  .history-item {
-    display: flex; align-items: center; gap: 2px;
-    border-radius: 8px;
-  }
-  .history-resume {
-    flex: 1; min-width: 0;
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 8px 12px; border-radius: 8px;
-    border: none; background: transparent;
-    color: #707070; cursor: pointer;
-    transition: background 100ms ease;
-    text-align: left; font-family: inherit;
-  }
-  .history-resume:hover { background: #151515; color: #a0a0a0; }
-  .history-title {
-    font-size: 13px; font-weight: 500;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    min-width: 0;
-  }
-  .history-time {
-    font-size: 11px; color: #383838;
-    font-family: 'D2Coding', 'JetBrains Mono', monospace;
-    white-space: nowrap; flex-shrink: 0;
-  }
-  .history-delete {
-    width: 24px; height: 24px; border: none; border-radius: 6px;
-    background: transparent; color: #2a2a2a; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0; font-size: 16px; line-height: 1;
-    transition: all 100ms ease;
-  }
-  .history-delete:hover { color: #c55; background: rgba(204, 85, 85, 0.06); }
+  .welcome-sub { font-size: 14px; color: #5c6370; margin: 0; line-height: 1.5; }
 
   /* ────────────────── Messages ────────────────── */
   .msg { margin-bottom: 2px; }
 
-  /* ── User ── */
-  .msg-user {
-    display: flex; justify-content: flex-end;
-    padding: 8px 0;
-  }
+  .msg-user { display: flex; justify-content: flex-end; padding: 8px 0; }
   .msg-user-bubble {
-    max-width: 85%;
-    padding: 10px 16px; border-radius: 18px 18px 4px 18px;
-    background: #1e1e2e; color: #cdd6f4;
+    max-width: 85%; padding: 10px 16px; border-radius: 18px 18px 4px 18px;
+    background: #2c313a; color: #abb2bf;
     font-size: 14px; line-height: 1.6;
     font-family: 'Pretendard Variable', Pretendard, -apple-system, sans-serif;
     white-space: pre-wrap; word-break: break-word;
-    border: 1px solid #313244;
+    border: 1px solid #3e4451;
   }
 
-  /* ── Assistant ── */
-  .msg-assistant {
-    display: flex; gap: 12px;
-    padding: 12px 0;
-  }
+  .msg-assistant { display: flex; gap: 12px; padding: 12px 0; }
   .msg-avatar {
     width: 28px; height: 28px; border-radius: 10px;
     display: flex; align-items: center; justify-content: center;
-    background: rgba(203, 166, 247, 0.08); color: #cba6f7;
+    background: rgba(198, 120, 221, 0.1); color: #c678dd;
     flex-shrink: 0; margin-top: 2px;
   }
-  .msg-content {
-    flex: 1; min-width: 0;
-    padding-top: 2px;
-  }
+  .msg-content { flex: 1; min-width: 0; padding-top: 2px; }
 
   /* ────────────────── Markdown ────────────────── */
   .md {
-    font-size: 14px; line-height: 1.7; color: #cdd6f4;
+    font-size: 14px; line-height: 1.7; color: #abb2bf;
     font-family: 'Pretendard Variable', Pretendard, -apple-system, sans-serif;
   }
-  .md :global(h1) { font-size: 20px; font-weight: 700; color: #cdd6f4; margin: 20px 0 8px; }
-  .md :global(h2) { font-size: 17px; font-weight: 600; color: #cdd6f4; margin: 18px 0 6px; }
-  .md :global(h3) { font-size: 15px; font-weight: 600; color: #cdd6f4; margin: 14px 0 4px; }
+  .md :global(h1) { font-size: 20px; font-weight: 700; color: #e5c07b; margin: 20px 0 8px; }
+  .md :global(h2) { font-size: 17px; font-weight: 600; color: #e5c07b; margin: 18px 0 6px; }
+  .md :global(h3) { font-size: 15px; font-weight: 600; color: #e5c07b; margin: 14px 0 4px; }
   .md :global(p) { margin: 0 0 10px; }
   .md :global(p:last-child) { margin-bottom: 0; }
-  .md :global(a) { color: #89b4fa; text-decoration: none; }
+  .md :global(a) { color: #61afef; text-decoration: none; }
   .md :global(a:hover) { text-decoration: underline; }
-  .md :global(strong) { font-weight: 600; color: #cdd6f4; }
-  .md :global(em) { color: #a6adc8; }
+  .md :global(strong) { font-weight: 600; color: #d19a66; }
+  .md :global(em) { color: #7f848e; }
   .md :global(code) {
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
-    background: #181825; color: #f38ba8; padding: 1px 5px; border-radius: 4px;
-    font-size: 0.85em; border: 1px solid #1e1e2e;
+    background: #21252b; color: #e06c75; padding: 1px 5px; border-radius: 4px;
+    font-size: 0.85em; border: 1px solid #3e4451;
   }
   .md :global(pre) {
-    background: #11111b; border: 1px solid #1e1e2e; border-radius: 10px;
+    background: #1e2127; border: 1px solid #3e4451; border-radius: 10px;
     padding: 14px 16px; overflow-x: auto; margin: 8px 0 12px;
   }
   .md :global(pre code) {
-    background: none; padding: 0; color: #cdd6f4; font-size: 13px;
+    background: none; padding: 0; color: #abb2bf; font-size: 13px;
     line-height: 1.55; border: none;
   }
   .md :global(blockquote) {
-    border-left: 2px solid #45475a; padding: 6px 14px; margin: 8px 0 12px;
-    color: #a6adc8;
+    border-left: 2px solid #4b5263; padding: 6px 14px; margin: 8px 0 12px;
+    color: #7f848e;
   }
-  .md :global(ul), .md :global(ol) {
-    padding-left: 22px; margin: 4px 0 10px;
-  }
+  .md :global(ul), .md :global(ol) { padding-left: 22px; margin: 4px 0 10px; }
   .md :global(li) { margin: 3px 0; }
-  .md :global(li::marker) { color: #585b70; }
-  .md :global(hr) {
-    border: none; border-top: 1px solid #1e1e2e; margin: 16px 0;
-  }
+  .md :global(li::marker) { color: #5c6370; }
+  .md :global(hr) { border: none; border-top: 1px solid #3e4451; margin: 16px 0; }
   .md :global(table) { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 13px; }
-  .md :global(th) { text-align: left; padding: 8px 12px; border-bottom: 1px solid #313244; color: #cdd6f4; font-weight: 600; }
-  .md :global(td) { padding: 6px 12px; border-bottom: 1px solid #181825; }
+  .md :global(th) { text-align: left; padding: 8px 12px; border-bottom: 1px solid #3e4451; color: #abb2bf; font-weight: 600; }
+  .md :global(td) { padding: 6px 12px; border-bottom: 1px solid #2c313a; }
   .md :global(details) {
     margin: 6px 0; padding: 8px 12px; border-radius: 8px;
-    background: #11111b; border: 1px solid #1e1e2e;
+    background: #1e2127; border: 1px solid #3e4451;
   }
-  .md :global(summary) {
-    cursor: pointer; font-weight: 500; color: #7f849c; font-size: 13px;
-    user-select: none;
-  }
-  .md :global(summary:hover) { color: #a6adc8; }
+  .md :global(summary) { cursor: pointer; font-weight: 500; color: #5c6370; font-size: 13px; user-select: none; }
+  .md :global(summary:hover) { color: #7f848e; }
 
   /* ────────────────── Streaming status ────────────────── */
   .streaming-status {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 0 4px;
-    font-size: 12px;
-    color: #7f849c;
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 0 4px; font-size: 12px; color: #7f848e;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
     animation: status-fade-in 200ms ease;
   }
-  @keyframes status-fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-  .status-indicator {
-    position: relative;
-    width: 8px; height: 8px;
-    flex-shrink: 0;
-  }
+  @keyframes status-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  .status-indicator { position: relative; width: 8px; height: 8px; flex-shrink: 0; }
   .pulse {
-    display: block;
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    background: #cba6f7;
-    animation: pulse-ring 1.5s ease-in-out infinite;
+    display: block; width: 8px; height: 8px; border-radius: 50%;
+    background: #c678dd; animation: pulse-ring 1.5s ease-in-out infinite;
   }
   @keyframes pulse-ring {
     0% { opacity: 0.4; transform: scale(0.8); }
     50% { opacity: 1; transform: scale(1.2); }
     100% { opacity: 0.4; transform: scale(0.8); }
   }
-  .status-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 500px;
-  }
+  .status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 500px; }
 </style>

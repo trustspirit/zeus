@@ -3,6 +3,7 @@
   import { workspaceStore } from '../stores/workspace.svelte.js'
   import { skillsStore } from '../stores/skills.svelte.js'
   import { markdownStore } from '../stores/markdown.svelte.js'
+  import { terminalStore } from '../stores/terminal.svelte.js'
   import { uiStore, AVAILABLE_MODELS } from '../stores/ui.svelte.js'
   import IconClaude from './icons/IconClaude.svelte'
 
@@ -114,6 +115,7 @@
     { command: '/vim', label: 'vim', desc: 'Toggle vim keybinding mode', kind: 'builtin', scope: 'system' },
     { command: '/agents', label: 'agents', desc: 'Manage subagents for task delegation', kind: 'builtin', scope: 'system' },
     { command: '/bug', label: 'bug', desc: 'Report a bug with Claude Code', kind: 'builtin', scope: 'system' },
+    { command: '/plugin', label: 'plugin', desc: 'Manage plugins and MCP integrations', kind: 'builtin', scope: 'system' },
   ]
 
   const allSlashItems = $derived.by((): SlashItem[] => {
@@ -316,9 +318,11 @@
         return null
 
       case '/mcp':
-        // Show MCP panel
+      case '/plugin':
+        // Show MCP panel (plugins / MCP are managed in the same panel)
+        uiStore.rightPanelTab = 'mcp'
         uiStore.rightPanelOpen = true
-        addSystemMessage('Opened right panel — switch to the **MCP** tab to manage servers.')
+        addSystemMessage('Opened MCP panel to manage servers and plugins.')
         return null
 
       case '/memory':
@@ -357,7 +361,7 @@
           '- `/clear` — Clear conversation\n' +
           '- `/compact` — Start fresh session (compacts context)\n' +
           '- `/model` — Change Claude model\n' +
-          '- `/mcp` — Open MCP panel\n' +
+          '- `/mcp` / `/plugin` — Open MCP & plugins panel\n' +
           '- `/memory` — Open CLAUDE.md\n' +
           '- `/config` — Show configuration\n' +
           '- `/status` — Session info\n\n' +
@@ -377,7 +381,9 @@
       case '/vim':
       case '/permissions':
       case '/bug':
-        addSystemMessage(`\`${cmd}\` is an interactive-mode command. Run \`claude\` in a terminal tab to use it.`)
+        // Open a terminal tab and run `claude <subcommand>` interactively
+        runInTerminal(cmd.slice(1), args)
+        addSystemMessage(`Running \`claude ${cmd.slice(1)}\` in a terminal tab…`)
         return null
 
       // These are translated to prompts for Claude headless mode
@@ -437,6 +443,26 @@
     } catch {
       addSystemMessage('`CLAUDE.md` not found. Use `/init` to create one.')
     }
+  }
+
+  /** Open a terminal tab and run `claude <subcommand>` interactively */
+  async function runInTerminal(subcommand: string, args: string) {
+    const cwd = workspaceStore.active?.path
+    const id = await terminalStore.create(cwd)
+    uiStore.activeView = 'terminal'
+
+    // Wait for the terminal to be rendered and attached before sending input
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
+
+    // Attach xterm if not already done (App.svelte normally does this)
+    try {
+      const el = document.getElementById(`terminal-${id}`)
+      if (el) terminalStore.attach(id, `terminal-${id}`)
+    } catch { /* already attached */ }
+
+    // Build the command: `claude <subcommand> [args]`
+    const fullCmd = args ? `claude ${subcommand} ${args}` : `claude ${subcommand}`
+    terminalStore.sendInput(id, fullCmd)
   }
 
   function send() {
@@ -713,14 +739,14 @@
 <style>
   .input-bar {
     flex-shrink: 0;
-    border-top: 1px solid #222;
-    background: #131313;
+    border-top: 1px solid #3e4451;
+    background: #21252b;
     padding: 12px 16px 8px;
     position: relative;
     transition: border-color 150ms ease;
   }
   .input-bar.drag-over {
-    border-color: #4a85c4;
+    border-color: #61afef;
   }
 
   /* ── Drop overlay ── */
@@ -731,11 +757,11 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-    background: rgba(74, 133, 196, 0.06);
-    border: 2px dashed #4a85c4;
+    background: rgba(112, 168, 224, 0.06);
+    border: 2px dashed #61afef;
     border-radius: 12px;
     z-index: 300;
-    color: #4a85c4;
+    color: #61afef;
     font-size: 14px;
     font-weight: 600;
     pointer-events: none;
@@ -755,9 +781,9 @@
     height: 28px;
     padding: 0 6px 0 8px;
     border-radius: 7px;
-    background: rgba(74, 133, 196, 0.08);
-    border: 1px solid rgba(74, 133, 196, 0.15);
-    color: #4a85c4;
+    background: rgba(112, 168, 224, 0.1);
+    border: 1px solid rgba(112, 168, 224, 0.2);
+    color: #61afef;
     font-size: 12px;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
     animation: tag-in 150ms ease;
@@ -773,41 +799,41 @@
   .file-remove {
     display: flex; align-items: center; justify-content: center;
     width: 18px; height: 18px; border: none; border-radius: 4px;
-    background: transparent; color: #4a85c4; cursor: pointer;
-    opacity: 0.5; transition: opacity 100ms ease, background 100ms ease;
+    background: transparent; color: #61afef; cursor: pointer;
+    opacity: 0.6; transition: opacity 100ms ease, background 100ms ease;
     padding: 0;
   }
   .file-remove:hover {
     opacity: 1;
-    background: rgba(74, 133, 196, 0.12);
+    background: rgba(112, 168, 224, 0.15);
   }
 
   .input-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    background: #1a1a1a;
-    border: 1px solid #222222;
+    background: #2c313a;
+    border: 1px solid #3e4451;
     border-radius: 12px;
     padding: 10px 12px;
     flex-wrap: wrap;
     transition: border-color 200ms ease, box-shadow 200ms ease;
   }
   .input-row:focus-within {
-    border-color: #b090e0;
-    box-shadow: 0 0 0 2px rgba(155, 111, 212, 0.08);
+    border-color: #c678dd;
+    box-shadow: 0 0 0 2px rgba(198, 120, 221, 0.1);
   }
 
   .mode-icon {
     display: flex; align-items: center; justify-content: center;
     width: 28px; height: 28px; border-radius: 8px;
-    background: rgba(155, 111, 212, 0.1); color: #b090e0; flex-shrink: 0;
+    background: rgba(198, 120, 221, 0.1); color: #c678dd; flex-shrink: 0;
   }
 
   .prompt {
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
     font-size: 14px; font-weight: 600;
-    color: #b090e0; flex-shrink: 0; line-height: 28px;
+    color: #c678dd; flex-shrink: 0; line-height: 28px;
     user-select: none;
   }
 
@@ -830,24 +856,24 @@
     to { opacity: 1; transform: scale(1); }
   }
   .command-tag.kind-command {
-    background: rgba(155, 111, 212, 0.12);
-    color: #b090e0;
-    border: 1px solid rgba(155, 111, 212, 0.2);
+    background: rgba(198, 120, 221, 0.12);
+    color: #c678dd;
+    border: 1px solid rgba(198, 120, 221, 0.25);
   }
   .command-tag.kind-skill {
-    background: rgba(106, 158, 101, 0.12);
-    color: #6a9e65;
-    border: 1px solid rgba(106, 158, 101, 0.2);
+    background: rgba(122, 190, 117, 0.12);
+    color: #7abe75;
+    border: 1px solid rgba(122, 190, 117, 0.25);
   }
   .command-tag.kind-agent {
-    background: rgba(190, 130, 90, 0.12);
-    color: #be825a;
-    border: 1px solid rgba(190, 130, 90, 0.2);
+    background: rgba(210, 150, 100, 0.12);
+    color: #d0966a;
+    border: 1px solid rgba(210, 150, 100, 0.25);
   }
   .command-tag.kind-builtin {
-    background: rgba(120, 120, 140, 0.1);
-    color: #808090;
-    border: 1px solid rgba(120, 120, 140, 0.18);
+    background: rgba(160, 160, 180, 0.1);
+    color: #a0a0b0;
+    border: 1px solid rgba(160, 160, 180, 0.2);
   }
   .tag-label {
     line-height: 1;
@@ -868,27 +894,27 @@
   .input-field {
     flex: 1; min-width: 80px;
     background: transparent; border: none; outline: none;
-    color: #c0c0c0; font-size: 14px; line-height: 28px;
+    color: #abb2bf; font-size: 14px; line-height: 28px;
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
     resize: none; overflow-y: auto;
     max-height: 150px;
     padding: 0; margin: 0;
     scrollbar-width: thin;
   }
-  .input-field::placeholder { color: #555; }
+  .input-field::placeholder { color: #4b5263; }
   .input-field::-webkit-scrollbar { width: 4px; }
-  .input-field::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+  .input-field::-webkit-scrollbar-thumb { background: #3e4451; border-radius: 2px; }
 
   .send-btn {
     width: 32px; height: 32px; border: none; border-radius: 8px;
-    background: #222222; color: #555; cursor: default;
+    background: #3e4451; color: #4b5263; cursor: default;
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0; transition: all 150ms ease;
   }
   .send-btn.active {
-    background: #b090e0; color: #111111; cursor: pointer;
+    background: #c678dd; color: #1e2127; cursor: pointer;
   }
-  .send-btn.active:hover { background: #b085e0; }
+  .send-btn.active:hover { background: #d19eee; }
 
   /* ── Slash command menu ── */
   .slash-menu {
@@ -897,8 +923,8 @@
     left: 16px; right: 16px;
     max-height: 280px;
     overflow-y: auto;
-    background: #1a1a1a;
-    border: 1px solid #222222;
+    background: #2c313a;
+    border: 1px solid #4b5263;
     border-radius: 12px;
     padding: 4px;
     box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.6);
@@ -907,13 +933,13 @@
     scrollbar-width: thin;
   }
   .slash-menu::-webkit-scrollbar { width: 4px; }
-  .slash-menu::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+  .slash-menu::-webkit-scrollbar-thumb { background: #3e4451; border-radius: 2px; }
 
   .slash-header {
     padding: 6px 10px 4px;
     font-size: 10px;
     font-weight: 600;
-    color: #555;
+    color: #4b5263;
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -927,7 +953,7 @@
     border: none;
     border-radius: 8px;
     background: transparent;
-    color: #888;
+    color: #abb2bf;
     cursor: pointer;
     text-align: left;
     font-family: inherit;
@@ -935,21 +961,21 @@
   }
   .slash-item:hover,
   .slash-item.selected {
-    background: #1e1e1e;
-    color: #bbb;
+    background: #3e4451;
+    color: #abb2bf;
   }
 
   .slash-cmd {
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
     font-size: 13px;
     font-weight: 600;
-    color: #b090e0;
+    color: #c678dd;
     white-space: nowrap;
     flex-shrink: 0;
   }
   .slash-item.selected .slash-cmd,
   .slash-item:hover .slash-cmd {
-    color: #b085e0;
+    color: #d19eee;
   }
 
   .slash-badge {
@@ -961,14 +987,14 @@
     border-radius: 4px;
     flex-shrink: 0;
   }
-  .slash-badge.kind-command { background: rgba(74, 133, 196, 0.1); color: #4a85c4; }
-  .slash-badge.kind-skill { background: rgba(106, 158, 101, 0.1); color: #6a9e65; }
-  .slash-badge.kind-agent { background: rgba(190, 130, 90, 0.1); color: #be825a; }
-  .slash-badge.kind-builtin { background: rgba(120, 120, 140, 0.1); color: #808090; }
+  .slash-badge.kind-command { background: rgba(112, 168, 224, 0.12); color: #61afef; }
+  .slash-badge.kind-skill { background: rgba(122, 190, 117, 0.12); color: #7abe75; }
+  .slash-badge.kind-agent { background: rgba(210, 150, 100, 0.12); color: #d0966a; }
+  .slash-badge.kind-builtin { background: rgba(160, 160, 180, 0.1); color: #a0a0b0; }
 
   .slash-desc {
     font-size: 11px;
-    color: #555;
+    color: #4b5263;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -982,17 +1008,17 @@
     padding: 6px 4px 0; flex-wrap: wrap;
   }
   .hint {
-    font-size: 10px; color: #555;
+    font-size: 10px; color: #4b5263;
   }
   .hint kbd {
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
-    font-size: 10px; color: #454545;
-    background: #1a1a1a; padding: 1px 4px; border-radius: 3px;
-    border: 1px solid #222222;
+    font-size: 10px; color: #4b5263;
+    background: #2c313a; padding: 1px 4px; border-radius: 3px;
+    border: 1px solid #3e4451;
   }
   .hint.ws {
     margin-left: auto;
-    color: #555;
+    color: #4b5263;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
   }
 
@@ -1002,13 +1028,13 @@
   }
   .model-btn {
     display: flex; align-items: center; gap: 5px;
-    padding: 3px 8px; border: 1px solid #222222; border-radius: 6px;
-    background: #1a1a1a; color: #888;
+    padding: 3px 8px; border: 1px solid #3e4451; border-radius: 6px;
+    background: #2c313a; color: #7f848e;
     font-size: 11px; font-weight: 500; cursor: pointer;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
     transition: all 120ms ease;
   }
-  .model-btn:hover { border-color: #3a3a3a; color: #bbb; }
+  .model-btn:hover { border-color: #5c6370; color: #abb2bf; }
   .model-btn .caret {
     transition: transform 150ms ease;
   }
@@ -1017,7 +1043,7 @@
   .model-menu {
     position: absolute; bottom: calc(100% + 6px); left: 0;
     min-width: 200px;
-    background: #1a1a1a; border: 1px solid #222222;
+    background: #2c313a; border: 1px solid #4b5263;
     border-radius: 10px; padding: 4px;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
     z-index: 100;
@@ -1025,20 +1051,20 @@
   .model-option {
     display: flex; align-items: center; gap: 8px;
     width: 100%; padding: 8px 10px; border: none; border-radius: 7px;
-    background: transparent; color: #888; cursor: pointer;
+    background: transparent; color: #abb2bf; cursor: pointer;
     text-align: left; font-family: inherit;
     transition: background 100ms ease;
   }
-  .model-option:hover { background: #1e1e1e; color: #bbb; }
-  .model-option.active { color: #b090e0; }
+  .model-option:hover { background: #3e4451; color: #abb2bf; }
+  .model-option.active { color: #c678dd; }
 
   .model-name {
     font-size: 12px; font-weight: 600;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
   }
   .model-desc {
-    font-size: 10px; color: #555; flex: 1;
+    font-size: 10px; color: #4b5263; flex: 1;
   }
-  .model-option.active .model-desc { color: #555; }
-  .check { color: #b090e0; flex-shrink: 0; }
+  .model-option.active .model-desc { color: #5c6370; }
+  .check { color: #c678dd; flex-shrink: 0; }
 </style>

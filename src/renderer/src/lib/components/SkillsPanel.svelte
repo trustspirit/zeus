@@ -284,23 +284,23 @@
   /* ── Scope bar ── */
   .scope-bar {
     display: flex; gap: 4px; margin-bottom: 16px;
-    background: #1a1a1a; border-radius: 6px; padding: 3px;
+    background: #2c313a; border-radius: 6px; padding: 3px;
     margin-top: 12px;
   }
   .scope-btn {
     flex: 1; padding: 6px 12px; border: none; background: transparent;
-    color: #777; font-size: 12px; font-weight: 500; border-radius: 4px;
+    color: #7f848e; font-size: 12px; font-weight: 500; border-radius: 4px;
     cursor: pointer; transition: all 120ms ease; font-family: inherit;
   }
-  .scope-btn:hover:not(:disabled) { color: #ccc; }
-  .scope-btn.active { background: #252525; color: #ccc; }
+  .scope-btn:hover:not(:disabled) { color: #abb2bf; }
+  .scope-btn.active { background: #3e4451; color: #abb2bf; }
   .scope-btn:disabled { opacity: 0.4; cursor: default; }
 
   /* ── Loading ── */
   .loading { display: flex; justify-content: center; padding: 32px; }
   .spinner {
-    width: 20px; height: 20px; border: 2px solid #252525;
-    border-top-color: #b090e0; border-radius: 50%;
+    width: 20px; height: 20px; border: 2px solid #4b5263;
+    border-top-color: #c678dd; border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -310,35 +310,35 @@
   .section-label {
     display: flex; align-items: center; gap: 6px;
     font-size: 10px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.05em; color: #666;
+    letter-spacing: 0.05em; color: #5c6370;
     padding: 8px 16px 6px;
     position: sticky; top: 0; z-index: 2;
-    background: #111111;
-    border-bottom: 1px solid #1a1a1a;
+    background: #21252b;
+    border-bottom: 1px solid #3e4451;
     margin: 0 -12px;
   }
   .section-label .count {
-    background: #1e1e1e; color: #777; font-size: 9px;
+    background: #3e4451; color: #7f848e; font-size: 9px;
     padding: 1px 5px; border-radius: 8px; font-weight: 500;
   }
   .kind-badge {
     font-size: 10px; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-  .kind-badge.skill { color: #6a9e65; }
-  .kind-badge.agent { color: #5a82b0; }
-  .kind-badge.command { color: #b090e0; }
-  .user-section { color: #555; }
+  .kind-badge.skill { color: #7abe75; }
+  .kind-badge.agent { color: #70a0d0; }
+  .kind-badge.command { color: #c678dd; }
+  .user-section { color: #4b5263; }
 
   /* ── Group headers (subdir folders within commands/) ── */
   .group-header {
     display: flex; align-items: center; gap: 6px;
     padding: 5px 10px; margin: 4px 0 2px;
     border-radius: 5px; cursor: pointer;
-    font-size: 11px; font-weight: 600; color: #555;
+    font-size: 11px; font-weight: 600; color: #4b5263;
     transition: background 120ms ease;
   }
-  .group-header:hover { background: #1a1a1a; color: #999; }
+  .group-header:hover { background: #2c313a; color: #abb2bf; }
   .group-label { flex: 1; min-width: 0; }
   .chevron {
     transition: transform 150ms ease; flex-shrink: 0;
@@ -350,7 +350,7 @@
     display: flex; align-items: flex-start; gap: 2px;
     border-radius: 6px; transition: background 120ms ease;
   }
-  .custom-skill-item:hover { background: #1a1a1a; }
+  .custom-skill-item:hover { background: #2c313a; }
 
   .skill-body {
     flex: 1; min-width: 0; padding: 8px 10px; border: none;
@@ -362,19 +362,19 @@
   .cmd-row { display: flex; align-items: center; gap: 6px; }
 
   .cmd-name {
-    font-size: 13px; font-weight: 600; color: #b090e0;
+    font-size: 13px; font-weight: 600; color: #c678dd;
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
   }
   .cmd-origin {
-    font-size: 10px; color: #666; background: #181818;
+    font-size: 10px; color: #5c6370; background: #2c313a;
     padding: 1px 5px; border-radius: 3px;
   }
   .cmd-desc {
-    font-size: 11px; color: #777; line-height: 1.4;
+    font-size: 11px; color: #7f848e; line-height: 1.4;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .cmd-path {
-    font-size: 10px; color: #555; font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    font-size: 10px; color: #4b5263; font-family: 'D2Coding', 'JetBrains Mono', monospace;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
@@ -387,23 +387,23 @@
 
   .action-btn {
     width: 24px; height: 24px; border: none; border-radius: 4px;
-    background: transparent; color: #666; cursor: pointer;
+    background: transparent; color: #5c6370; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     transition: all 120ms ease;
   }
-  .action-btn:hover { background: #1e1e1e; color: #bbb; }
+  .action-btn:hover { background: #3e4451; color: #abb2bf; }
 
   /* ── Empty state ── */
   .empty-custom {
-    text-align: center; padding: 24px 16px; color: #666;
+    text-align: center; padding: 24px 16px; color: #5c6370;
   }
-  .empty-icon { margin-bottom: 12px; opacity: 0.3; }
-  .empty-title { font-size: 13px; font-weight: 600; color: #777; margin: 0 0 6px; }
+  .empty-icon { margin-bottom: 12px; opacity: 0.4; }
+  .empty-title { font-size: 13px; font-weight: 600; color: #7f848e; margin: 0 0 6px; }
   .empty-desc { font-size: 11px; line-height: 1.6; margin: 0; }
   .empty-desc code {
-    background: #181818; padding: 1px 5px; border-radius: 3px;
+    background: #2c313a; padding: 1px 5px; border-radius: 3px;
     font-size: 11px; font-family: 'D2Coding', 'JetBrains Mono', monospace;
-    color: #b090e0;
+    color: #c678dd;
   }
 
   /* ── Built-in / MCP skill items ── */
@@ -412,14 +412,14 @@
     gap: 12px; padding: 10px 10px; border-radius: 6px;
     cursor: pointer; transition: background 120ms ease;
   }
-  .skill-item:hover { background: #1a1a1a; }
+  .skill-item:hover { background: #2c313a; }
 
   .skill-info { flex: 1; min-width: 0; }
   .skill-name {
-    display: block; font-size: 13px; font-weight: 500; color: #bbb;
+    display: block; font-size: 13px; font-weight: 500; color: #abb2bf;
   }
   .skill-desc-text {
-    display: block; font-size: 11px; color: #666; margin-top: 2px;
+    display: block; font-size: 11px; color: #5c6370; margin-top: 2px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
@@ -432,18 +432,18 @@
   }
   .toggle-slider {
     position: absolute; inset: 0;
-    background: #252525; border-radius: 10px;
+    background: #4b5263; border-radius: 10px;
     transition: background 200ms ease;
   }
   .toggle-slider::after {
     content: ''; position: absolute;
     width: 16px; height: 16px; border-radius: 50%;
-    background: #777; top: 2px; left: 2px;
+    background: #7f848e; top: 2px; left: 2px;
     transition: transform 200ms ease, background 200ms ease;
   }
-  .toggle.on .toggle-slider { background: rgba(155, 111, 212, 0.25); }
+  .toggle.on .toggle-slider { background: rgba(198, 120, 221, 0.3); }
   .toggle.on .toggle-slider::after {
-    transform: translateX(16px); background: #b090e0;
+    transform: translateX(16px); background: #c678dd;
   }
 
 </style>

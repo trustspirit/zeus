@@ -54,7 +54,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: #1e1e2e;
+    background: #2c313a;
   }
   .terminal-area.hidden {
     display: none;

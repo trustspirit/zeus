@@ -142,6 +142,39 @@ function getClaudeCodeVersion(): string | null {
   }
 }
 
+function checkLatestClaudeVersion(): Promise<{ current: string | null; latest: string | null; upToDate: boolean }> {
+  return new Promise((resolve) => {
+    const current = getClaudeCodeVersion()
+    // Extract semver from version string (e.g. "claude 1.0.25 (Claude Code)" → "1.0.25")
+    const currentSemver = current?.match(/(\d+\.\d+\.\d+)/)?.[1] ?? null
+
+    const child = spawn('npm', ['view', '@anthropic-ai/claude-code', 'version'], {
+      shell: true,
+      env: { ...process.env },
+      timeout: 15000
+    })
+
+    let stdout = ''
+    let stderr = ''
+    child.stdout?.on('data', (d: Buffer) => (stdout += d.toString()))
+    child.stderr?.on('data', (d: Buffer) => (stderr += d.toString()))
+
+    child.on('close', (code) => {
+      const latest = stdout.trim() || null
+      if (code !== 0 || !latest) {
+        resolve({ current: currentSemver, latest: null, upToDate: false })
+        return
+      }
+      const upToDate = currentSemver === latest
+      resolve({ current: currentSemver, latest, upToDate })
+    })
+
+    child.on('error', () => {
+      resolve({ current: currentSemver, latest: null, upToDate: false })
+    })
+  })
+}
+
 function updateClaudeCode(): Promise<{ success: boolean; output?: string; error?: string }> {
   return new Promise((resolve) => {
     const child = spawn('npm', ['install', '-g', '@anthropic-ai/claude-code'], {
@@ -421,6 +454,7 @@ function registerIPC(): void {
   // Claude
   ipcMain.handle('claude:is-installed', () => isClaudeCodeInstalled())
   ipcMain.handle('claude:version', () => getClaudeCodeVersion())
+  ipcMain.handle('claude:check-latest', () => checkLatestClaudeVersion())
   ipcMain.handle('claude:update', () => updateClaudeCode())
 
   // IDE

@@ -53,36 +53,36 @@
     backdrop-filter: blur(4px);
   }
   .content {
-    position: relative; background: #181818; border: 1px solid #252525;
+    position: relative; background: #21252b; border: 1px solid #3e4451;
     border-radius: 12px; width: 420px; max-height: 80vh;
     overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   }
   .header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 16px 20px; border-bottom: 1px solid #1e1e1e;
+    padding: 16px 20px; border-bottom: 1px solid #3e4451;
   }
-  h2 { font-size: 15px; font-weight: 600; color: #a0a0a0; }
+  h2 { font-size: 15px; font-weight: 600; color: #abb2bf; }
   .close {
     display: flex; align-items: center; justify-content: center;
     width: 28px; height: 28px; border: none; background: transparent;
-    color: #505050; border-radius: 6px; cursor: pointer; font-size: 20px;
+    color: #5c6370; border-radius: 6px; cursor: pointer; font-size: 20px;
   }
-  .close:hover { background: #191919; color: #a0a0a0; }
+  .close:hover { background: #3e4451; color: #abb2bf; }
   .body { padding: 16px 20px; overflow-y: auto; }
-  .empty { color: #606060; font-size: 13px; text-align: center; padding: 20px; }
+  .empty { color: #7f848e; font-size: 13px; text-align: center; padding: 20px; }
 
   .ide-item {
     display: flex; align-items: center; gap: 12px;
     padding: 10px 12px; border-radius: 6px; cursor: pointer;
-    border: none; background: transparent; color: #a0a0a0;
+    border: none; background: transparent; color: #abb2bf;
     font-size: 14px; font-weight: 500; width: 100%; text-align: left;
     font-family: inherit; transition: background 120ms ease;
   }
-  .ide-item:hover { background: #191919; }
+  .ide-item:hover { background: #3e4451; }
   .ide-icon {
-    width: 32px; height: 32px; border-radius: 6px; background: #161616;
-    display: flex; align-items: center; justify-content: center; color: #606060;
+    width: 32px; height: 32px; border-radius: 6px; background: #2c313a;
+    display: flex; align-items: center; justify-content: center; color: #7f848e;
   }
   .ide-name { flex: 1; }
-  .ide-cmd { font-size: 11px; color: #505050; font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace; }
+  .ide-cmd { font-size: 11px; color: #5c6370; font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace; }
 </style>

@@ -73,13 +73,13 @@
     font-family: inherit;
     border: 2px solid transparent;
   }
-  .workspace-item:hover { background: #1e1e1e; }
-  .workspace-item.active { background: rgba(176, 144, 224, 0.1); }
-  .workspace-item.active .workspace-name { color: #b090e0; }
+  .workspace-item:hover { background: #1c1c1c; }
+  .workspace-item.active { background: rgba(196, 160, 255, 0.08); }
+  .workspace-item.active .workspace-name { color: #c4a0ff; }
 
   /* Drag-over indicator */
   .workspace-item.drag-over {
-    border-top: 2px solid #b090e0;
+    border-top: 2px solid #c4a0ff;
     border-radius: 0;
   }
 
@@ -91,32 +91,32 @@
     cursor: grab;
     transition: color 120ms ease;
   }
-  .workspace-item:hover .drag-handle { color: #555; }
+  .workspace-item:hover .drag-handle { color: #606060; }
   .drag-handle:active { cursor: grabbing; }
 
   .workspace-icon {
     width: 32px;
     height: 32px;
     border-radius: 6px;
-    background: #1a1a1a;
+    background: #1c1c1c;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: #888;
+    color: #999;
     font-size: 14px;
     font-weight: 600;
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
     text-transform: uppercase;
   }
-  .workspace-icon.active { background: rgba(176, 144, 224, 0.08); color: #b090e0; }
+  .workspace-icon.active { background: rgba(196, 160, 255, 0.1); color: #c4a0ff; }
 
   .workspace-details { flex: 1; min-width: 0; }
 
   .workspace-name {
     font-size: 13px;
     font-weight: 500;
-    color: #ccc;
+    color: #e0e0e0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -124,7 +124,7 @@
 
   .workspace-path {
     font-size: 11px;
-    color: #666;
+    color: #808080;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

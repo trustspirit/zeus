@@ -129,29 +129,29 @@
   .browser-header {
     display: flex; align-items: center; gap: 6px;
     padding: 12px 12px 10px; flex-shrink: 0;
-    color: #666;
+    color: #5c6370;
   }
   .header-title {
     font-size: 11px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.04em; color: #666; flex: 1;
+    letter-spacing: 0.04em; color: #5c6370; flex: 1;
   }
   .header-count {
-    font-size: 10px; color: #555;
+    font-size: 10px; color: #4b5263;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
   }
 
   /* ── Loading / Empty ── */
   .loading { display: flex; justify-content: center; padding: 32px; }
   .spinner {
-    width: 18px; height: 18px; border: 2px solid #252525;
-    border-top-color: #b090e0; border-radius: 50%;
+    width: 18px; height: 18px; border: 2px solid #4b5263;
+    border-top-color: #c678dd; border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
   .empty {
     display: flex; flex-direction: column; align-items: center;
-    padding: 32px 16px; color: #555; text-align: center; gap: 10px;
+    padding: 32px 16px; color: #5c6370; text-align: center; gap: 10px;
   }
   .empty p { font-size: 12px; margin: 0; }
 
@@ -161,7 +161,7 @@
   /* ── Folder group ── */
   .folder-group {
     margin-bottom: 0;
-    border-top: 1px solid #1a1a1a;
+    border-top: 1px solid #222;
     padding-top: 4px;
   }
   .folder-group.first { border-top: none; padding-top: 0; }
@@ -169,14 +169,14 @@
   .folder-header {
     display: flex; align-items: center; gap: 6px;
     width: 100%; padding: 7px 8px; border: none;
-    background: rgba(255,255,255,0.015); color: #777; cursor: pointer;
+    background: rgba(255,255,255,0.02); color: #7f848e; cursor: pointer;
     border-radius: 5px; font-size: 11px; font-weight: 500;
     font-family: inherit; transition: all 100ms ease;
   }
-  .folder-header:hover { background: rgba(255,255,255,0.035); color: #bbb; }
+  .folder-header:hover { background: rgba(255,255,255,0.04); color: #abb2bf; }
 
   .chevron {
-    transition: transform 150ms ease; flex-shrink: 0; color: #555;
+    transition: transform 150ms ease; flex-shrink: 0; color: #4b5263;
   }
   .chevron.open { transform: rotate(90deg); }
 
@@ -186,9 +186,9 @@
     display: inline-flex; align-items: center; gap: 3px;
     font-size: 11px; font-weight: 600;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
-    color: #4a85c4;
+    color: #61afef;
   }
-  .folder-badge.root { color: #4a85c4; }
+  .folder-badge.root { color: #61afef; }
 
   /* Path breadcrumb */
   .folder-path {
@@ -197,12 +197,12 @@
     font-size: 11px; min-width: 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .path-sep { color: #333; margin: 0 2px; }
-  .path-seg { color: #555; }
-  .path-seg.last { color: #b89530; font-weight: 600; }
+  .path-sep { color: #4b5263; margin: 0 2px; }
+  .path-seg { color: #4b5263; }
+  .path-seg.last { color: #d4a840; font-weight: 600; }
 
   .folder-count {
-    font-size: 9px; color: #555; background: #1a1a1a;
+    font-size: 9px; color: #4b5263; background: #2c313a;
     padding: 1px 5px; border-radius: 6px; flex-shrink: 0;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
   }
@@ -219,12 +219,12 @@
     border-left: 2px solid transparent;
   }
   .file-item:hover {
-    background: rgba(255,255,255,0.02);
-    border-left-color: #2a2a2a;
+    background: rgba(255,255,255,0.025);
+    border-left-color: #4b5263;
   }
   .file-item.active {
-    background: rgba(155, 111, 212, 0.06);
-    border-left-color: #b090e0;
+    background: rgba(198, 120, 221, 0.07);
+    border-left-color: #c678dd;
   }
 
   .file-left {
@@ -232,30 +232,30 @@
     min-width: 0; flex: 1;
   }
 
-  .file-icon { color: #4a85c4; flex-shrink: 0; margin-top: 1px; }
-  .file-item.active .file-icon { color: #b090e0; }
+  .file-icon { color: #61afef; flex-shrink: 0; margin-top: 1px; }
+  .file-item.active .file-icon { color: #c678dd; }
 
   .file-info {
     display: flex; flex-direction: column; gap: 1px; min-width: 0;
   }
 
   .file-name {
-    font-size: 12px; font-weight: 500; color: #909090;
+    font-size: 12px; font-weight: 500; color: #abb2bf;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .file-item:hover .file-name { color: #bbb; }
-  .file-item.active .file-name { color: #ccc; font-weight: 600; }
+  .file-item:hover .file-name { color: #abb2bf; }
+  .file-item.active .file-name { color: #abb2bf; font-weight: 600; }
 
   .file-relpath {
-    font-size: 10px; color: #383844;
+    font-size: 10px; color: #4b5263;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .file-item:hover .file-relpath { color: #666; }
-  .file-item.active .file-relpath { color: #5a5075; }
+  .file-item:hover .file-relpath { color: #5c6370; }
+  .file-item.active .file-relpath { color: #8070a0; }
 
   .file-size {
-    font-size: 10px; color: #353535; flex-shrink: 0;
+    font-size: 10px; color: #4b5263; flex-shrink: 0;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
   }
 </style>

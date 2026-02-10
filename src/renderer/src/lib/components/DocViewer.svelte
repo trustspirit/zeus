@@ -56,7 +56,7 @@
   .doc-viewer {
     flex: 1; width: 100%; height: 100%;
     display: flex; flex-direction: column;
-    background: #0d0d0d; overflow: hidden;
+    background: #282c34; overflow: hidden;
   }
 
   .doc-header {
@@ -70,7 +70,7 @@
   }
   .doc-icon { color: #60a5fa; flex-shrink: 0; }
   .breadcrumb-path {
-    font-size: 12px; color: #999;
+    font-size: 12px; color: #7f848e;
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
@@ -130,7 +130,7 @@
   }
   .markdown-content :global(blockquote) {
     border-left: 3px solid #c084fc; padding: 8px 20px; margin: 0 0 16px;
-    color: #999; background: rgba(192, 132, 252, 0.05); border-radius: 0 6px 6px 0;
+    color: #7f848e; background: rgba(192, 132, 252, 0.05); border-radius: 0 6px 6px 0;
   }
   .markdown-content :global(ul), .markdown-content :global(ol) {
     padding-left: 28px; margin: 0 0 16px;
@@ -140,7 +140,7 @@
     width: 100%; border-collapse: collapse; margin: 0 0 20px; font-size: 14px;
   }
   .markdown-content :global(th) {
-    text-align: left; padding: 10px 14px; border-bottom: 2px solid #333;
+    text-align: left; padding: 10px 14px; border-bottom: 2px solid #4b5263;
     color: #e6e6e6; font-weight: 600;
   }
   .markdown-content :global(td) {

@@ -73,6 +73,13 @@ function formatToolLabel(name: string): string {
   return map[name] || name
 }
 
+/** Per-workspace snapshot of Claude tab state */
+interface WorkspaceSnapshot {
+  conversations: ClaudeConversation[]
+  activeId: string | null
+  savedSessions: SavedSession[]
+}
+
 class ClaudeSessionStore {
   conversations = $state<ClaudeConversation[]>([])
   activeId = $state<string | null>(null)
@@ -82,6 +89,10 @@ class ClaudeSessionStore {
   activeConversation = $derived(
     this.activeId ? this.conversations.find((c) => c.id === this.activeId) ?? null : null
   )
+
+  /** Workspace-scoped snapshots: workspacePath → snapshot */
+  private _snapshots = new Map<string, WorkspaceSnapshot>()
+  private _currentWorkspace: string | null = null
 
   private _unsubEvent: (() => void) | null = null
   private _unsubDone: (() => void) | null = null
@@ -107,6 +118,37 @@ class ClaudeSessionStore {
     this.savedSessions = await window.zeus.claudeSession.listSaved(workspacePath)
   }
 
+  /**
+   * Switch workspace context: save current state, restore (or init) for the new workspace.
+   * Returns true if the workspace had existing conversations restored.
+   */
+  switchWorkspace(workspacePath: string): boolean {
+    // Save current workspace state
+    if (this._currentWorkspace) {
+      this._snapshots.set(this._currentWorkspace, {
+        conversations: this.conversations,
+        activeId: this.activeId,
+        savedSessions: this.savedSessions
+      })
+    }
+
+    this._currentWorkspace = workspacePath
+
+    // Restore previous state for this workspace, or start fresh
+    const snap = this._snapshots.get(workspacePath)
+    if (snap) {
+      this.conversations = snap.conversations
+      this.activeId = snap.activeId
+      this.savedSessions = snap.savedSessions
+      return this.conversations.length > 0
+    } else {
+      this.conversations = []
+      this.activeId = null
+      this.savedSessions = []
+      return false
+    }
+  }
+
   /** Create a new conversation and switch to it. */
   create(workspacePath?: string): string {
     const id = `claude-${nextConvId++}`
@@ -129,7 +171,7 @@ class ClaudeSessionStore {
     return id
   }
 
-  /** Resume a saved session — reads Claude Code's native transcript and replaces current conversation */
+  /** Resume a saved session — restore transcript and activate it in-place */
   async resume(saved: SavedSession): Promise<string> {
     // Check if this session is already open
     const existing = this.conversations.find((c) => c.claudeSessionId === saved.sessionId)
@@ -158,26 +200,7 @@ class ClaudeSessionStore {
       }]
     }
 
-    // Try to reuse the current active conversation (same workspace) instead of creating a new tab
-    const current = this.activeId
-      ? this.conversations.find((c) => c.id === this.activeId)
-      : null
-    const sameWorkspace = current && current.workspacePath === saved.workspacePath
-
-    if (sameWorkspace && current && !current.isStreaming) {
-      // Replace current conversation in-place
-      current.claudeSessionId = saved.sessionId
-      current.title = saved.title
-      current.messages = restoredMessages
-      current.streamingContent = ''
-      current.streamingBlocks = []
-      current.streamingStatus = ''
-      this.conversations = [...this.conversations] // trigger reactivity
-      uiStore.activeView = 'claude'
-      return current.id
-    }
-
-    // Fallback: create new conversation if no suitable current one
+    // Create a new active conversation for the resumed session
     const id = `claude-${nextConvId++}`
     const conversation: ClaudeConversation = {
       id,
@@ -194,6 +217,10 @@ class ClaudeSessionStore {
     this.conversations = [...this.conversations, conversation]
     this.activeId = id
     uiStore.activeView = 'claude'
+
+    // Remove from saved list so it transitions from History → Active in the sidebar
+    this.savedSessions = this.savedSessions.filter((s) => s.sessionId !== saved.sessionId)
+
     return id
   }
 
@@ -309,8 +336,20 @@ class ClaudeSessionStore {
     })
   }
 
-  private _handleEvent(id: string, rawEvent: ClaudeStreamEvent) {
+  /** Find a conversation by id — check current workspace first, then snapshots */
+  private _findConv(id: string): ClaudeConversation | null {
     const conv = this.conversations.find((c) => c.id === id)
+    if (conv) return conv
+    // Check snapshots of other workspaces
+    for (const snap of this._snapshots.values()) {
+      const c = snap.conversations.find((c) => c.id === id)
+      if (c) return c
+    }
+    return null
+  }
+
+  private _handleEvent(id: string, rawEvent: ClaudeStreamEvent) {
+    const conv = this._findConv(id)
     if (!conv) return
 
     // Unwrap stream_event wrapper if present (from --include-partial-messages)
@@ -401,7 +440,7 @@ class ClaudeSessionStore {
   }
 
   private _handleDone(id: string, exitCode: number, sessionId?: string) {
-    const conv = this.conversations.find((c) => c.id === id)
+    const conv = this._findConv(id)
     if (!conv) return
 
     if (sessionId) {

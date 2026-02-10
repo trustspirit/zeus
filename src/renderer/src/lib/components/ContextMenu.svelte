@@ -32,18 +32,18 @@
   .overlay { position: fixed; inset: 0; z-index: 199; }
   .menu {
     position: fixed; z-index: 200;
-    background: #181818; border: 1px solid #252525;
+    background: #2c313a; border: 1px solid #4b5263;
     border-radius: 8px; padding: 4px; min-width: 200px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
   }
   .item {
     display: block; width: 100%; padding: 7px 12px;
-    border: none; background: transparent; color: #a0a0a0;
+    border: none; background: transparent; color: #abb2bf;
     font-size: 13px; text-align: left; cursor: pointer;
     border-radius: 4px; font-family: inherit;
     transition: background 120ms ease;
   }
-  .item:hover { background: rgba(155, 111, 212, 0.1); color: #9b6fd4; }
-  .item.danger:hover { background: rgba(204, 85, 85, 0.1); color: #c55; }
-  .divider { height: 1px; background: #1e1e1e; margin: 4px 8px; }
+  .item:hover { background: rgba(198, 120, 221, 0.1); color: #c678dd; }
+  .item.danger:hover { background: rgba(240, 96, 96, 0.1); color: #e06c75; }
+  .divider { height: 1px; background: #3e4451; margin: 4px 8px; }
 </style>

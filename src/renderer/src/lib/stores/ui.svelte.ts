@@ -26,6 +26,7 @@ export const AVAILABLE_MODELS: ModelOption[] = [
 class UIStore {
   sidebarCollapsed = $state(false)
   rightPanelOpen = $state(false)
+  rightPanelTab = $state<'skills' | 'mcp' | 'docs'>('skills')
   ideModalOpen = $state(false)
   updateModalOpen = $state(false)
   toasts = $state<Toast[]>([])

@@ -5,6 +5,12 @@ const MAX_HISTORY = 200
 
 // ── Terminal Store (Svelte 5 runes) ────────────────────────────────────────────
 
+/** Per-workspace snapshot of terminal tab state */
+interface TerminalSnapshot {
+  sessions: TerminalSession[]
+  activeId: number | null
+}
+
 class TerminalStore {
   sessions = $state<TerminalSession[]>([])
   activeId = $state<number | null>(null)
@@ -12,6 +18,10 @@ class TerminalStore {
   activeSession = $derived(
     this.activeId !== null ? this.sessions.find((s) => s.id === this.activeId) ?? null : null
   )
+
+  /** Workspace-scoped snapshots: workspacePath → snapshot */
+  private _snapshots = new Map<string, TerminalSnapshot>()
+  private _currentWorkspace: string | null = null
 
   private _unsubData: (() => void) | null = null
   private _unsubExit: (() => void) | null = null
@@ -24,10 +34,21 @@ class TerminalStore {
   listen() {
     this._unsubData = window.zeus.terminal.onData(() => { /* preload handles xterm.write */ })
     this._unsubExit = window.zeus.terminal.onExit(({ id }) => {
-      // Auto-remove the session when the PTY process exits
+      // Auto-remove the session when the PTY process exits (from current view)
       this.sessions = this.sessions.filter((s) => s.id !== id)
       if (this.activeId === id) {
         this.activeId = this.sessions.length > 0 ? this.sessions[this.sessions.length - 1].id : null
+      }
+      // Also clean up from any workspace snapshots
+      for (const [key, snap] of this._snapshots) {
+        const hadSession = snap.sessions.some((s) => s.id === id)
+        if (hadSession) {
+          snap.sessions = snap.sessions.filter((s) => s.id !== id)
+          if (snap.activeId === id) {
+            snap.activeId = snap.sessions.length > 0 ? snap.sessions[snap.sessions.length - 1].id : null
+          }
+          if (snap.sessions.length === 0) this._snapshots.delete(key)
+        }
       }
     })
   }
@@ -71,6 +92,32 @@ class TerminalStore {
     this.sessions = this.sessions.filter((s) => s.id !== id)
     if (this.activeId === id) {
       this.activeId = this.sessions.length > 0 ? this.sessions[this.sessions.length - 1].id : null
+    }
+  }
+
+  /**
+   * Switch workspace context: save current sessions, restore (or init) for the new workspace.
+   * Terminal PTY processes remain alive — we just hide/show the tab lists.
+   */
+  switchWorkspace(workspacePath: string): void {
+    // Save current workspace state
+    if (this._currentWorkspace) {
+      this._snapshots.set(this._currentWorkspace, {
+        sessions: this.sessions,
+        activeId: this.activeId
+      })
+    }
+
+    this._currentWorkspace = workspacePath
+
+    // Restore previous state for this workspace, or start fresh
+    const snap = this._snapshots.get(workspacePath)
+    if (snap) {
+      this.sessions = snap.sessions
+      this.activeId = snap.activeId
+    } else {
+      this.sessions = []
+      this.activeId = null
     }
   }
 

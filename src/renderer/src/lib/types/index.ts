@@ -184,6 +184,7 @@ export interface ZeusAPI {
   claude: {
     isInstalled(): Promise<boolean>
     version(): Promise<string | null>
+    checkLatest(): Promise<{ current: string | null; latest: string | null; upToDate: boolean }>
     update(): Promise<ClaudeUpdateResult>
   }
   claudeSession: {

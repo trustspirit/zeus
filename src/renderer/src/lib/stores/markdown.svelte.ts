@@ -6,6 +6,13 @@ import { uiStore } from './ui.svelte.js'
 // Background tabs store metadata (file info) but content is set to null.
 // When switching tabs, the active tab's content is loaded from disk.
 
+/** Per-workspace snapshot of doc tab state */
+interface DocSnapshot {
+  files: MarkdownFile[]
+  openTabs: DocTab[]
+  activeDocId: string | null
+}
+
 class MarkdownStore {
   /** All markdown files in the workspace (flat, sorted by dir then name) */
   files = $state<MarkdownFile[]>([])
@@ -14,6 +21,10 @@ class MarkdownStore {
   /** Open doc tabs in the main content area */
   openTabs = $state<DocTab[]>([])
   activeDocId = $state<string | null>(null)
+
+  /** Workspace-scoped snapshots: workspacePath → snapshot */
+  private _snapshots = new Map<string, DocSnapshot>()
+  private _currentWorkspace: string | null = null
 
   /** Derived: active doc tab */
   activeTab = $derived(
@@ -100,6 +111,34 @@ class MarkdownStore {
     this.openTabs = this.openTabs.map((t) =>
       t.id === this.activeDocId ? { ...t, content } : t
     )
+  }
+
+  /**
+   * Switch workspace context: save current doc tabs, restore (or init) for the new workspace.
+   */
+  switchWorkspace(workspacePath: string): void {
+    // Save current workspace state
+    if (this._currentWorkspace) {
+      this._snapshots.set(this._currentWorkspace, {
+        files: this.files,
+        openTabs: this.openTabs,
+        activeDocId: this.activeDocId
+      })
+    }
+
+    this._currentWorkspace = workspacePath
+
+    // Restore previous state for this workspace, or start fresh
+    const snap = this._snapshots.get(workspacePath)
+    if (snap) {
+      this.files = snap.files
+      this.openTabs = snap.openTabs
+      this.activeDocId = snap.activeDocId
+    } else {
+      this.files = []
+      this.openTabs = []
+      this.activeDocId = null
+    }
   }
 
   /** Clear all state (e.g. when workspace changes) */

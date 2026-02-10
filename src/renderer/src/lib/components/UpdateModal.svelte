@@ -2,28 +2,58 @@
   import { claudeStore } from '../stores/claude.svelte.js'
   import { uiStore } from '../stores/ui.svelte.js'
 
-  let updateResult = $state<{ success: boolean; output?: string; error?: string } | null>(null)
-  let running = $state(false)
+  type Phase = 'checking' | 'up-to-date' | 'update-available' | 'updating' | 'done' | 'error'
 
-  async function runUpdate() {
-    running = true
-    updateResult = null
-    const result = await claudeStore.update()
-    updateResult = result
-    running = false
-    if (result.success) {
-      uiStore.showToast('Claude Code updated successfully', 'success')
-    } else {
-      uiStore.showToast('Failed to update Claude Code', 'error')
+  let phase = $state<Phase>('checking')
+  let currentVersion = $state<string | null>(null)
+  let latestVersion = $state<string | null>(null)
+  let updateResult = $state<{ success: boolean; output?: string; error?: string } | null>(null)
+
+  // Auto-check when modal opens
+  $effect(() => {
+    if (uiStore.updateModalOpen) {
+      phase = 'checking'
+      currentVersion = null
+      latestVersion = null
+      updateResult = null
+      checkForUpdate()
+    }
+  })
+
+  async function checkForUpdate() {
+    phase = 'checking'
+    try {
+      const info = await window.zeus.claude.checkLatest()
+      currentVersion = info.current
+      latestVersion = info.latest
+
+      if (info.upToDate) {
+        phase = 'up-to-date'
+      } else if (info.latest) {
+        phase = 'update-available'
+      } else {
+        // Couldn't determine latest — offer to update anyway
+        phase = 'update-available'
+      }
+    } catch {
+      phase = 'error'
+      updateResult = { success: false, error: 'Failed to check for updates.' }
     }
   }
 
-  // Auto-start update when modal opens
-  $effect(() => {
-    if (uiStore.updateModalOpen && !running && !updateResult) {
-      runUpdate()
+  async function runUpdate() {
+    phase = 'updating'
+    updateResult = null
+    const result = await claudeStore.update()
+    updateResult = result
+    if (result.success) {
+      phase = 'done'
+      uiStore.showToast('Claude Code updated successfully', 'success')
+    } else {
+      phase = 'error'
+      uiStore.showToast('Failed to update Claude Code', 'error')
     }
-  })
+  }
 
   function close() {
     uiStore.updateModalOpen = false
@@ -41,19 +71,74 @@
         <button class="close-btn" onclick={close}>&times;</button>
       </div>
       <div class="body">
-        {#if running}
+        <!-- Checking -->
+        {#if phase === 'checking'}
           <div class="status-row">
             <div class="spinner"></div>
-            <p>Updating Claude Code via npm...</p>
+            <p>Checking for updates…</p>
           </div>
-        {:else if updateResult?.success}
-          <p class="success">Claude Code updated successfully!</p>
-          {#if updateResult.output}
+
+        <!-- Up to date -->
+        {:else if phase === 'up-to-date'}
+          <div class="result-block up-to-date">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#98c379" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <div class="result-info">
+              <p class="result-title">Already up to date</p>
+              <p class="result-version">v{currentVersion ?? '?'}</p>
+            </div>
+          </div>
+
+        <!-- Update available -->
+        {:else if phase === 'update-available'}
+          <div class="result-block update-available">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c678dd" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <div class="result-info">
+              <p class="result-title">Update available</p>
+              <div class="version-compare">
+                <span class="ver-current">{currentVersion ?? '?'}</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5c6370" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                <span class="ver-latest">{latestVersion ?? '?'}</span>
+              </div>
+            </div>
+          </div>
+          <div class="action-row">
+            <button class="btn secondary" onclick={close}>Later</button>
+            <button class="btn primary" onclick={runUpdate}>Update Now</button>
+          </div>
+
+        <!-- Updating -->
+        {:else if phase === 'updating'}
+          <div class="status-row">
+            <div class="spinner"></div>
+            <p>Updating to v{latestVersion ?? 'latest'}…</p>
+          </div>
+
+        <!-- Done -->
+        {:else if phase === 'done'}
+          <div class="result-block up-to-date">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#98c379" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <div class="result-info">
+              <p class="result-title">Updated successfully!</p>
+              <p class="result-version">v{claudeStore.version ?? latestVersion ?? '?'}</p>
+            </div>
+          </div>
+          {#if updateResult?.output}
             <pre class="output">{updateResult.output}</pre>
           {/if}
-        {:else if updateResult}
-          <p class="error">Update failed</p>
-          <pre class="output">{updateResult.error ?? 'Unknown error'}</pre>
+
+        <!-- Error -->
+        {:else if phase === 'error'}
+          <div class="result-block error-block">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#e06c75" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            <div class="result-info">
+              <p class="result-title error-text">Update failed</p>
+            </div>
+          </div>
+          <pre class="output">{updateResult?.error ?? 'Unknown error'}</pre>
+          <div class="action-row">
+            <button class="btn secondary" onclick={close}>Close</button>
+            <button class="btn primary" onclick={runUpdate}>Retry</button>
+          </div>
         {/if}
       </div>
     </div>
@@ -71,41 +156,79 @@
     backdrop-filter: blur(4px);
   }
   .content {
-    position: relative; background: #181818; border: 1px solid #252525;
-    border-radius: 12px; width: 360px; max-height: 80vh;
+    position: relative; background: #21252b; border: 1px solid #3e4451;
+    border-radius: 12px; width: 380px; max-height: 80vh;
     overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   }
   .header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 16px 20px; border-bottom: 1px solid #1e1e1e;
+    padding: 16px 20px; border-bottom: 1px solid #3e4451;
   }
-  h2 { font-size: 15px; font-weight: 600; color: #a0a0a0; }
+  h2 { font-size: 15px; font-weight: 600; color: #abb2bf; margin: 0; }
   .close-btn {
     display: flex; align-items: center; justify-content: center;
     width: 28px; height: 28px; border: none; background: transparent;
-    color: #505050; border-radius: 6px; cursor: pointer; font-size: 20px;
+    color: #5c6370; border-radius: 6px; cursor: pointer; font-size: 20px;
   }
-  .close-btn:hover { background: #191919; color: #a0a0a0; }
-  .body { padding: 16px 20px; }
+  .close-btn:hover { background: #3e4451; color: #abb2bf; }
+  .body { padding: 20px; }
 
-  .status-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
-  .status-row p { color: #606060; font-size: 13px; }
+  .status-row {
+    display: flex; align-items: center; gap: 12px; padding: 12px 0;
+  }
+  .status-row p { color: #abb2bf; font-size: 13px; margin: 0; }
 
   .spinner {
-    width: 16px; height: 16px; border: 2px solid #252525;
-    border-top-color: #9b6fd4; border-radius: 50%;
-    animation: spin 0.8s linear infinite;
+    width: 18px; height: 18px; border: 2px solid #3e4451;
+    border-top-color: #c678dd; border-radius: 50%;
+    animation: spin 0.8s linear infinite; flex-shrink: 0;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .success { color: #3a9e64; font-weight: 500; font-size: 13px; }
-  .error { color: #c55; font-weight: 500; font-size: 13px; }
+  .result-block {
+    display: flex; align-items: center; gap: 14px;
+    padding: 16px 0;
+  }
+  .result-info { flex: 1; }
+  .result-title {
+    font-size: 14px; font-weight: 600; color: #abb2bf; margin: 0 0 4px;
+  }
+  .result-version {
+    font-size: 12px; color: #5c6370; margin: 0;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+  }
+
+  .version-compare {
+    display: flex; align-items: center; gap: 6px;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+  .ver-current { color: #5c6370; }
+  .ver-latest { color: #98c379; font-weight: 600; }
+
+  .error-text { color: #e06c75 !important; }
+
+  .action-row {
+    display: flex; gap: 8px; justify-content: flex-end;
+    margin-top: 16px; padding-top: 16px; border-top: 1px solid #3e4451;
+  }
+  .btn {
+    padding: 7px 16px; border: 1px solid #4b5263; border-radius: 6px;
+    font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit;
+  }
+  .btn.secondary { background: transparent; color: #7f848e; }
+  .btn.secondary:hover { background: #3e4451; color: #abb2bf; }
+  .btn.primary {
+    background: rgba(198, 120, 221, 0.12); border-color: rgba(198, 120, 221, 0.25);
+    color: #c678dd;
+  }
+  .btn.primary:hover { background: rgba(198, 120, 221, 0.2); }
 
   .output {
     margin-top: 8px;
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
-    font-size: 11px; color: #505050;
+    font-size: 11px; color: #5c6370;
     white-space: pre-wrap; max-height: 200px; overflow-y: auto;
-    background: #131313; padding: 8px; border-radius: 6px;
+    background: #21252b; padding: 8px; border-radius: 6px;
   }
 </style>

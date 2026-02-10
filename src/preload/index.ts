@@ -187,6 +187,7 @@ contextBridge.exposeInMainWorld('zeus', {
   claude: {
     isInstalled: () => ipcRenderer.invoke('claude:is-installed'),
     version: () => ipcRenderer.invoke('claude:version'),
+    checkLatest: () => ipcRenderer.invoke('claude:check-latest'),
     update: () => ipcRenderer.invoke('claude:update')
   },
 

@@ -40,42 +40,43 @@
   .welcome {
     position: absolute;
     inset: 0;
+    z-index: 10;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #0d0d0d;
+    background: #282c34;
   }
   .content { text-align: center; max-width: 480px; }
-  .icon { color: #9b6fd4; margin-bottom: 20px; opacity: 0.6; }
-  h1 { font-size: 28px; font-weight: 600; color: #a0a0a0; margin-bottom: 8px; letter-spacing: -0.02em; }
-  .subtitle { font-size: 15px; color: #606060; margin-bottom: 32px; }
+  .icon { color: #c678dd; margin-bottom: 20px; opacity: 0.9; }
+  h1 { font-size: 28px; font-weight: 600; color: #abb2bf; margin-bottom: 8px; letter-spacing: -0.02em; }
+  .subtitle { font-size: 15px; color: #7f848e; margin-bottom: 32px; }
 
   .actions { display: flex; gap: 12px; justify-content: center; margin-bottom: 36px; }
 
   .btn {
     display: flex; align-items: center; gap: 8px;
-    padding: 10px 20px; border: 1px solid #252525; background: #161616;
-    color: #a0a0a0; border-radius: 8px; cursor: pointer;
+    padding: 10px 20px; border: 1px solid #3e4451; background: #2c313a;
+    color: #abb2bf; border-radius: 8px; cursor: pointer;
     font-size: 14px; font-weight: 500; transition: all 120ms ease;
     font-family: inherit;
   }
-  .btn:hover { background: #191919; border-color: #333; transform: translateY(-1px); }
+  .btn:hover { background: #3e4451; border-color: #4b5263; transform: translateY(-1px); }
   .btn.primary {
-    background: rgba(155, 111, 212, 0.1);
-    border-color: rgba(155, 111, 212, 0.2);
-    color: #9b6fd4;
+    background: rgba(198, 120, 221, 0.12);
+    border-color: rgba(198, 120, 221, 0.3);
+    color: #c678dd;
   }
   .btn.primary:hover {
-    background: rgba(155, 111, 212, 0.18);
-    border-color: #9b6fd4;
+    background: rgba(198, 120, 221, 0.2);
+    border-color: #c678dd;
   }
 
   .shortcuts { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: center; }
-  .shortcut { font-size: 12px; color: #505050; display: flex; align-items: center; gap: 6px; }
+  .shortcut { font-size: 12px; color: #5c6370; display: flex; align-items: center; gap: 6px; }
   kbd {
     display: inline-block; padding: 2px 6px; font-size: 11px;
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
-    color: #606060; background: #161616; border: 1px solid #252525;
+    color: #7f848e; background: #2c313a; border: 1px solid #3e4451;
     border-radius: 4px; line-height: 1.4;
   }
 </style>

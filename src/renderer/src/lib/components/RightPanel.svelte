@@ -7,8 +7,7 @@
   import IconPlug from './icons/IconPlug.svelte'
   import IconDoc from './icons/IconDoc.svelte'
 
-  type PanelTab = 'skills' | 'mcp' | 'docs'
-  let activeTab = $state<PanelTab>('skills')
+  const activeTab = $derived(uiStore.rightPanelTab)
 </script>
 
 <aside class="right-panel" class:collapsed={!uiStore.rightPanelOpen}>
@@ -17,7 +16,7 @@
     <div class="tab-strip">
       <button
         class="tab-btn" class:active={activeTab === 'skills'}
-        onclick={() => (activeTab = 'skills')}
+        onclick={() => (uiStore.rightPanelTab = 'skills')}
         title="Skills"
       >
         <IconSkills size={16} />
@@ -25,7 +24,7 @@
       </button>
       <button
         class="tab-btn" class:active={activeTab === 'mcp'}
-        onclick={() => (activeTab = 'mcp')}
+        onclick={() => (uiStore.rightPanelTab = 'mcp')}
         title="MCP Servers"
       >
         <IconPlug size={16} />
@@ -33,7 +32,7 @@
       </button>
       <button
         class="tab-btn" class:active={activeTab === 'docs'}
-        onclick={() => (activeTab = 'docs')}
+        onclick={() => (uiStore.rightPanelTab = 'docs')}
         title="Docs"
       >
         <IconDoc size={16} />
@@ -58,8 +57,8 @@
   .right-panel {
     width: 320px;
     min-width: 320px;
-    background: #131313;
-    border-left: 1px solid #222;
+    background: #21252b;
+    border-left: 1px solid #181a1f;
     display: flex;
     flex-direction: column;
     transition: width 200ms ease, min-width 200ms ease, opacity 200ms ease;
@@ -74,7 +73,7 @@
 
   .tab-strip {
     display: flex;
-    border-bottom: 1px solid #222;
+    border-bottom: 1px solid #181a1f;
     flex-shrink: 0;
   }
 
@@ -87,7 +86,7 @@
     padding: 10px 8px;
     border: none;
     background: transparent;
-    color: #666;
+    color: #5c6370;
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
@@ -95,11 +94,11 @@
     border-bottom: 2px solid transparent;
     font-family: inherit;
   }
-  .tab-btn:hover { color: #999; background: #1a1a1a; }
+  .tab-btn:hover { color: #abb2bf; background: #2c313a; }
   .tab-btn.active {
-    color: #b090e0;
-    border-bottom-color: #b090e0;
-    background: rgba(176, 144, 224, 0.05);
+    color: #c678dd;
+    border-bottom-color: #c678dd;
+    background: rgba(198, 120, 221, 0.06);
   }
 
   .panel-body {

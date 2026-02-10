@@ -43,10 +43,16 @@
     terminalStore.listen()
     claudeSessionStore.listen()
 
-    // Auto-open Claude Code for the active workspace (default view)
-    if (workspaceStore.active && claudeStore.installed) {
-      await claudeSessionStore.loadSaved(workspaceStore.active.path)
-      launchClaudeConversation(workspaceStore.active.path)
+    // Initialize workspace-scoped tabs for the active workspace
+    if (workspaceStore.active) {
+      const wsPath = workspaceStore.active.path
+      claudeSessionStore.switchWorkspace(wsPath)
+      terminalStore.switchWorkspace(wsPath)
+      markdownStore.switchWorkspace(wsPath)
+      await claudeSessionStore.loadSaved(wsPath)
+      if (claudeStore.installed) {
+        launchClaudeConversation(wsPath)
+      }
     }
 
     unsubs.push(
@@ -93,36 +99,44 @@
     if (!cwd) {
       const ws = await workspaceStore.add()
       if (!ws) return
-      launchClaudeConversation(ws.path)
+      claudeSessionStore.create(ws.path)
       return
     }
-    launchClaudeConversation(cwd)
+    // Always create a new Claude Code conversation
+    claudeSessionStore.create(cwd)
   }
 
+  /** Open or switch to an existing conversation (used for initial workspace load) */
   function launchClaudeConversation(cwd: string) {
-    // Check if there's already an active Claude conversation for this workspace
     const existing = claudeSessionStore.conversations.find((c) => c.workspacePath === cwd)
     if (existing) {
       claudeSessionStore.switchTo(existing.id)
       return
     }
-    // Use headless mode: clean conversation UI with stream-json output
     claudeSessionStore.create(cwd)
   }
 
-  // When workspace changes, load saved sessions and auto-open Claude
+  // When workspace changes, swap all tab states to workspace-scoped snapshots
   let prevWorkspacePath: string | null = null
   $effect(() => {
     const ws = workspaceStore.active
     if (ws && ws.path !== prevWorkspacePath) {
       prevWorkspacePath = ws.path
+
+      // Switch all stores to this workspace's tab state
+      const hadConversations = claudeSessionStore.switchWorkspace(ws.path)
+      terminalStore.switchWorkspace(ws.path)
+      markdownStore.switchWorkspace(ws.path)
+
+      // Load saved sessions for this workspace
       claudeSessionStore.loadSaved(ws.path)
+
       // Auto-open Claude conversation if none exist for this workspace
-      if (claudeStore.installed) {
-        const existingForWs = claudeSessionStore.conversations.find((c) => c.workspacePath === ws.path)
-        if (!existingForWs) {
-          launchClaudeConversation(ws.path)
-        }
+      if (claudeStore.installed && !hadConversations) {
+        launchClaudeConversation(ws.path)
+      } else if (hadConversations) {
+        // Ensure we're viewing the Claude tab if conversations were restored
+        uiStore.activeView = 'claude'
       }
     }
   })
@@ -206,12 +220,14 @@
 </div>
 
 <div class="app">
-  <Sidebar onupdate={() => (uiStore.updateModalOpen = true)} />
+  <Sidebar
+    onupdate={() => (uiStore.updateModalOpen = true)}
+    onrunClaude={() => runClaude()}
+    onnewTerminal={() => newTerminal()}
+  />
 
   <main class="main-content">
     <Toolbar
-      onrunClaude={() => runClaude()}
-      onnewTerminal={() => newTerminal()}
       onopenIDE={openIDE}
       onreveal={revealInFinder}
       ontogglePanel={toggleRightPanel}
@@ -249,8 +265,8 @@
   :global(html), :global(body) {
     height: 100%;
     overflow: hidden;
-    background: #0d0d0d;
-    color: #e6e6e6;
+    background: #282c34;
+    color: #abb2bf;
     font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, 'Noto Sans KR', 'Segoe UI', Inter, Roboto, sans-serif;
     font-size: 13px;
     -webkit-font-smoothing: antialiased;
@@ -258,22 +274,22 @@
   }
   :global(::-webkit-scrollbar) { width: 6px; height: 6px; }
   :global(::-webkit-scrollbar-track) { background: transparent; }
-  :global(::-webkit-scrollbar-thumb) { background: #222; border-radius: 3px; }
-  :global(::-webkit-scrollbar-thumb:hover) { background: #333; }
+  :global(::-webkit-scrollbar-thumb) { background: #4b5263; border-radius: 3px; }
+  :global(::-webkit-scrollbar-thumb:hover) { background: #5c6370; }
 
   .titlebar {
     height: 52px;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #0a0a0a;
-    border-bottom: 1px solid #1a1a1a;
+    background: #21252b;
+    border-bottom: 1px solid #181a1f;
     -webkit-app-region: drag;
   }
   .titlebar-text {
     font-size: 13px;
     font-weight: 500;
-    color: #505050;
+    color: #7f848e;
     pointer-events: none;
   }
 
@@ -287,7 +303,7 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    background: #0d0d0d;
+    background: #282c34;
   }
 
   .terminal-region {
