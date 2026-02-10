@@ -7,10 +7,6 @@ class WorkspaceStore {
   active = $state<Workspace | null>(null)
   activeDirInfo = $state<DirInfo | null>(null)
 
-  sorted = $derived(
-    [...this.list].sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0))
-  )
-
   async load() {
     this.list = await window.zeus.workspace.list()
   }
@@ -37,10 +33,17 @@ class WorkspaceStore {
     this.active = ws
     await window.zeus.workspace.setLast(ws.path)
     this.activeDirInfo = await window.zeus.system.getDirInfo(ws.path)
-    // Update lastOpened locally for sort
-    const found = this.list.find((w) => w.path === ws.path)
-    if (found) found.lastOpened = Date.now()
     return !silent
+  }
+
+  /** Reorder workspaces via drag-and-drop. Persists to disk. */
+  async reorder(fromIndex: number, toIndex: number) {
+    if (fromIndex === toIndex) return
+    const items = [...this.list]
+    const [moved] = items.splice(fromIndex, 1)
+    items.splice(toIndex, 0, moved)
+    this.list = items
+    await window.zeus.workspace.reorder(items.map((w) => w.path))
   }
 
   async restoreLast() {

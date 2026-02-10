@@ -2,6 +2,9 @@ import type { MarkdownFile, DocTab } from '../types/index.js'
 import { uiStore } from './ui.svelte.js'
 
 // ── Markdown / Docs Store ─────────────────────────────────────────────────────
+// Memory optimization: only the *active* tab's content is kept in memory.
+// Background tabs store metadata (file info) but content is set to null.
+// When switching tabs, the active tab's content is loaded from disk.
 
 class MarkdownStore {
   /** All markdown files in the workspace (flat, sorted by dir then name) */
@@ -43,12 +46,12 @@ class MarkdownStore {
     // Check if already open
     const existing = this.openTabs.find((t) => t.id === file.path)
     if (existing) {
-      this.activeDocId = existing.id
-      uiStore.activeView = 'doc'
+      // Reload content on switch (it was released from memory)
+      await this._activateTab(existing.id)
       return
     }
 
-    // Load content
+    // Load content for the new active tab
     const content = (await window.zeus.files.read(file.path)) ?? '*(empty file)*'
 
     const tab: DocTab = {
@@ -57,18 +60,20 @@ class MarkdownStore {
       content
     }
 
+    // Release content of previously active tab before adding new one
+    this._releaseInactiveContent(tab.id)
+
     this.openTabs = [...this.openTabs, tab]
     this.activeDocId = tab.id
     uiStore.activeView = 'doc'
   }
 
-  /** Switch to a doc tab */
-  switchTo(id: string) {
-    this.activeDocId = id
-    uiStore.activeView = 'doc'
+  /** Switch to a doc tab — lazy-loads content from disk */
+  async switchTo(id: string) {
+    await this._activateTab(id)
   }
 
-  /** Close a doc tab */
+  /** Close a doc tab — releases its content */
   close(id: string) {
     const idx = this.openTabs.findIndex((t) => t.id === id)
     if (idx === -1) return
@@ -78,12 +83,11 @@ class MarkdownStore {
     // If we closed the active tab, switch to another
     if (this.activeDocId === id) {
       if (this.openTabs.length > 0) {
-        // Pick the tab that was adjacent
         const newIdx = Math.min(idx, this.openTabs.length - 1)
-        this.activeDocId = this.openTabs[newIdx].id
+        // Activate the adjacent tab (loads content)
+        void this._activateTab(this.openTabs[newIdx].id)
       } else {
         this.activeDocId = null
-        // Switch back to terminal view
         uiStore.activeView = 'terminal'
       }
     }
@@ -106,6 +110,35 @@ class MarkdownStore {
     if (uiStore.activeView === 'doc') {
       uiStore.activeView = 'terminal'
     }
+  }
+
+  // ── Private helpers ─────────────────────────────────────────────────────────
+
+  /** Release content of all tabs except the given active id */
+  private _releaseInactiveContent(activeId: string) {
+    this.openTabs = this.openTabs.map((t) =>
+      t.id !== activeId ? { ...t, content: null as unknown as string } : t
+    )
+  }
+
+  /** Activate a tab: load its content, release others */
+  private async _activateTab(id: string) {
+    const tab = this.openTabs.find((t) => t.id === id)
+    if (!tab) return
+
+    // Load content if not already present (was released)
+    if (!tab.content) {
+      const content = (await window.zeus.files.read(tab.file.path)) ?? '*(empty file)*'
+      this.openTabs = this.openTabs.map((t) =>
+        t.id === id ? { ...t, content } : t
+      )
+    }
+
+    // Release content of other tabs
+    this._releaseInactiveContent(id)
+
+    this.activeDocId = id
+    uiStore.activeView = 'doc'
   }
 }
 

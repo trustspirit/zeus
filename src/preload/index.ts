@@ -13,6 +13,7 @@ try { WebLinksAddon = require('@xterm/addon-web-links').WebLinksAddon } catch {}
 interface LocalTerminal {
   xterm: Terminal
   fitAddon: FitAddon
+  addons: { dispose(): void }[]  // track all addons for proper cleanup
 }
 const localTerminals = new Map<number, LocalTerminal>()
 
@@ -53,7 +54,8 @@ contextBridge.exposeInMainWorld('zeus', {
     add: () => ipcRenderer.invoke('workspace:add'),
     remove: (wsPath: string) => ipcRenderer.invoke('workspace:remove', wsPath),
     setLast: (wsPath: string) => ipcRenderer.invoke('workspace:set-last', wsPath),
-    getLast: () => ipcRenderer.invoke('workspace:get-last')
+    getLast: () => ipcRenderer.invoke('workspace:get-last'),
+    reorder: (orderedPaths: string[]) => ipcRenderer.invoke('workspace:reorder', orderedPaths)
   },
 
   // ── Terminal ──
@@ -64,32 +66,39 @@ contextBridge.exposeInMainWorld('zeus', {
       const container = document.getElementById(elementId)
       if (!container) throw new Error(`Element #${elementId} not found`)
 
+      // scrollback 5000 is ~2-4 MB per terminal; 50000 was ~20-40 MB
       const xterm = new Terminal({
         fontSize: 14,
         fontFamily:
           "'D2Coding ligature', D2Coding, 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, monospace",
-        lineHeight: 1.2,
+        lineHeight: 1.35,
         theme: THEME,
-        cursorBlink: true,
+        cursorBlink: false,
         cursorStyle: 'bar',
+        cursorInactiveStyle: 'none',
         allowTransparency: true,
-        scrollback: 10000,
+        scrollback: 5000,
         tabStopWidth: 4,
         macOptionIsMeta: true,
         macOptionClickForcesSelection: true,
         drawBoldTextInBrightColors: true,
-        minimumContrastRatio: 1
+        minimumContrastRatio: 1,
+        // Output-only: keyboard input is handled by InputBar
+        disableStdin: true
       })
+
+      const addons: { dispose(): void }[] = []
 
       const fitAddon = new FitAddon()
       xterm.loadAddon(fitAddon)
+      addons.push(fitAddon)
 
       if (WebLinksAddon) {
-        xterm.loadAddon(
-          new WebLinksAddon((_: MouseEvent, uri: string) => {
-            ipcRenderer.invoke('system:open-external', uri)
-          })
-        )
+        const wl = new WebLinksAddon((_: MouseEvent, uri: string) => {
+          ipcRenderer.invoke('system:open-external', uri)
+        })
+        xterm.loadAddon(wl)
+        addons.push(wl)
       }
 
       xterm.open(container)
@@ -100,6 +109,7 @@ contextBridge.exposeInMainWorld('zeus', {
           const webgl = new WebglAddon()
           webgl.onContextLoss(() => webgl.dispose())
           xterm.loadAddon(webgl)
+          addons.push(webgl)
         } catch {
           /* canvas fallback */
         }
@@ -107,12 +117,12 @@ contextBridge.exposeInMainWorld('zeus', {
 
       fitAddon.fit()
 
-      xterm.onData((data) => ipcRenderer.send('terminal:write', { id: termId, data }))
+      // No xterm.onData — keyboard input goes through InputBar, not raw xterm
       xterm.onResize(({ cols, rows }) =>
         ipcRenderer.send('terminal:resize', { id: termId, cols, rows })
       )
 
-      localTerminals.set(termId, { xterm, fitAddon })
+      localTerminals.set(termId, { xterm, fitAddon, addons })
       ipcRenderer.send('terminal:resize', { id: termId, cols: xterm.cols, rows: xterm.rows })
 
       return { cols: xterm.cols, rows: xterm.rows }
@@ -138,14 +148,24 @@ contextBridge.exposeInMainWorld('zeus', {
     },
 
     kill: async (termId: number) => {
-      localTerminals.get(termId)?.xterm.dispose()
-      localTerminals.delete(termId)
+      const local = localTerminals.get(termId)
+      if (local) {
+        // Dispose addons first (WebGL context, etc.) then xterm
+        for (const addon of local.addons) {
+          try { addon.dispose() } catch { /* already disposed */ }
+        }
+        local.addons.length = 0
+        try { local.xterm.dispose() } catch { /* already disposed */ }
+        localTerminals.delete(termId)
+      }
       return ipcRenderer.invoke('terminal:kill', termId)
     },
 
     onData: (callback: (payload: { id: number; data: string }) => void) => {
       const handler = (_: Electron.IpcRendererEvent, payload: { id: number; data: string }) => {
-        localTerminals.get(payload.id)?.xterm.write(payload.data)
+        const local = localTerminals.get(payload.id)
+        if (!local) return  // terminal already disposed — skip to avoid writing to dead xterm
+        local.xterm.write(payload.data)
         callback(payload)
       }
       ipcRenderer.on('terminal:data', handler)
@@ -154,9 +174,10 @@ contextBridge.exposeInMainWorld('zeus', {
 
     onExit: (callback: (payload: { id: number; exitCode: number }) => void) => {
       const handler = (_: Electron.IpcRendererEvent, payload: { id: number; exitCode: number }) => {
-        localTerminals
-          .get(payload.id)
-          ?.xterm.writeln(`\r\n\x1B[90m[Process exited with code ${payload.exitCode}]\x1B[0m`)
+        const local = localTerminals.get(payload.id)
+        if (local) {
+          local.xterm.writeln(`\r\n\x1B[90m[Process exited with code ${payload.exitCode}]\x1B[0m`)
+        }
         callback(payload)
       }
       ipcRenderer.on('terminal:exit', handler)

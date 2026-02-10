@@ -20,6 +20,8 @@ export interface TerminalSession {
   isClaude: boolean
   title: string
   workspacePath: string | undefined
+  history: string[]       // command history for this session
+  historyIndex: number    // current position in history navigation (-1 = new input)
 }
 
 export interface TerminalSize {
@@ -112,6 +114,7 @@ export interface ZeusAPI {
     remove(wsPath: string): Promise<boolean>
     setLast(wsPath: string): Promise<boolean>
     getLast(): Promise<string | null>
+    reorder(orderedPaths: string[]): Promise<boolean>
   }
   terminal: {
     create(workspacePath?: string): Promise<TerminalCreateResult>

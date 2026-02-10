@@ -5,13 +5,15 @@
   import IconBolt from './icons/IconBolt.svelte'
   import IconTerminal from './icons/IconTerminal.svelte'
 
+  let tabBarEl: HTMLDivElement
+
   function switchToTerminal(id: number) {
     terminalStore.switchTo(id)
     uiStore.activeView = 'terminal'
   }
 
   function switchToDoc(id: string) {
-    markdownStore.switchTo(id)
+    void markdownStore.switchTo(id)
   }
 
   function closeDoc(e: MouseEvent, id: string) {
@@ -23,14 +25,36 @@
     e.stopPropagation()
     terminalStore.close(id)
   }
+
+  /** Middle-click (wheel button) on a terminal tab → close it */
+  function handleTerminalAuxClick(e: MouseEvent, id: number) {
+    if (e.button === 1) { e.preventDefault(); terminalStore.close(id) }
+  }
+
+  /** Middle-click on a doc tab → close it */
+  function handleDocAuxClick(e: MouseEvent, id: string) {
+    if (e.button === 1) { e.preventDefault(); markdownStore.close(id) }
+  }
+
+  /** Horizontal scroll with mouse wheel on the tab bar */
+  function handleWheel(e: WheelEvent) {
+    if (!tabBarEl) return
+    // Convert vertical scroll to horizontal
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      e.preventDefault()
+      tabBarEl.scrollLeft += e.deltaY
+    }
+  }
 </script>
 
-<div class="tab-bar">
+<div class="tab-bar" bind:this={tabBarEl} onwheel={handleWheel}>
   <!-- Terminal tabs -->
   {#each terminalStore.sessions as session (session.id)}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="tab"
       class:active={uiStore.activeView === 'terminal' && session.id === terminalStore.activeId}
+      onauxclick={(e) => handleTerminalAuxClick(e, session.id)}
     >
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
       <div class="tab-body" onclick={() => switchToTerminal(session.id)}>
@@ -57,9 +81,11 @@
 
   <!-- Doc tabs -->
   {#each markdownStore.openTabs as tab (tab.id)}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="tab doc-tab"
       class:active={uiStore.activeView === 'doc' && tab.id === markdownStore.activeDocId}
+      onauxclick={(e) => handleDocAuxClick(e, tab.id)}
     >
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
       <div class="tab-body" onclick={() => switchToDoc(tab.id)}>
@@ -83,9 +109,17 @@
     gap: 2px;
     max-width: 100%;
     overflow-x: auto;
+    overflow-y: hidden;
     padding: 0 4px;
+    scroll-behavior: smooth;
+    flex-shrink: 0;
   }
-  .tab-bar::-webkit-scrollbar { height: 0; }
+  /* Thin scrollbar that appears on hover */
+  .tab-bar::-webkit-scrollbar { height: 3px; }
+  .tab-bar::-webkit-scrollbar-track { background: transparent; }
+  .tab-bar::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; }
+  .tab-bar:hover::-webkit-scrollbar-thumb { background: #333; }
+  .tab-bar:hover::-webkit-scrollbar-thumb:hover { background: #555; }
 
   .tab {
     display: flex;
@@ -99,6 +133,7 @@
     transition: all 120ms ease;
     border: 1px solid transparent;
     background: transparent;
+    flex-shrink: 0;
   }
   .tab:hover { background: #222; color: #e6e6e6; }
   .tab.active { background: #1a1a1a; color: #e6e6e6; border-color: #262626; }

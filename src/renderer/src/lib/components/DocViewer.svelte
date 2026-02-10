@@ -5,7 +5,7 @@
 
   const renderedHtml = $derived.by(() => {
     const tab = markdownStore.activeTab
-    if (!tab) return ''
+    if (!tab || !tab.content) return ''
     try {
       return marked.parse(tab.content, { async: false }) as string
     } catch {

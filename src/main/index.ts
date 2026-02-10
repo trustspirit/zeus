@@ -359,6 +359,23 @@ function registerIPC(): void {
 
   ipcMain.handle('workspace:get-last', () => store.lastWorkspace)
 
+  ipcMain.handle('workspace:reorder', (_, orderedPaths: string[]) => {
+    // Rebuild workspaces array in the given path order
+    const byPath = new Map(store.workspaces.map((w) => [w.path, w]))
+    const reordered: Workspace[] = []
+    for (const p of orderedPaths) {
+      const ws = byPath.get(p)
+      if (ws) reordered.push(ws)
+    }
+    // Append any missing (shouldn't happen, but be safe)
+    for (const ws of store.workspaces) {
+      if (!reordered.find((r) => r.path === ws.path)) reordered.push(ws)
+    }
+    store.workspaces = reordered
+    saveStore(store)
+    return true
+  })
+
   // Terminal
   ipcMain.handle('terminal:create', (_, workspacePath?: string) => createTerminal(workspacePath))
 

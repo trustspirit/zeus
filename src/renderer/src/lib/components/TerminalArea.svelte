@@ -2,8 +2,10 @@
   import { onMount, tick } from 'svelte'
   import { terminalStore } from '../stores/terminal.svelte.js'
   import { uiStore } from '../stores/ui.svelte.js'
+  import InputBar from './InputBar.svelte'
 
-  let containerEl: HTMLDivElement
+  let outputEl: HTMLDivElement
+  let inputBarRef = $state<InputBar | undefined>(undefined)
 
   // Resize observer — refit terminal when container size changes
   onMount(() => {
@@ -12,11 +14,11 @@
         terminalStore.fitActiveDebounced(50)
       }
     })
-    observer.observe(containerEl)
+    observer.observe(outputEl)
     return () => observer.disconnect()
   })
 
-  // When activeId changes or view switches to terminal, fit and focus
+  // When activeId changes or view switches to terminal, fit and focus input
   $effect(() => {
     const id = terminalStore.activeId
     const view = uiStore.activeView
@@ -25,23 +27,32 @@
         requestAnimationFrame(() => {
           try {
             const size = terminalStore.fitActive()
-            terminalStore.focusActive()
             if (size) uiStore.termSize = `${size.cols}x${size.rows}`
           } catch { /* terminal may not be attached yet */ }
+          // Focus the input bar instead of xterm
+          inputBarRef?.focus()
         })
       })
     }
   })
 </script>
 
-<div class="terminal-area" class:hidden={uiStore.activeView !== 'terminal'} bind:this={containerEl}>
-  {#each terminalStore.sessions as session (session.id)}
-    <div
-      class="terminal-wrapper"
-      class:active={session.id === terminalStore.activeId}
-      id="terminal-{session.id}"
-    ></div>
-  {/each}
+<div class="terminal-area" class:hidden={uiStore.activeView !== 'terminal'}>
+  <!-- Output display (xterm, read-only) -->
+  <div class="output-region" bind:this={outputEl}>
+    {#each terminalStore.sessions as session (session.id)}
+      <div
+        class="terminal-wrapper"
+        class:active={session.id === terminalStore.activeId}
+        id="terminal-{session.id}"
+      ></div>
+    {/each}
+  </div>
+
+  <!-- Input bar -->
+  {#if terminalStore.activeSession}
+    <InputBar bind:this={inputBarRef} />
+  {/if}
 </div>
 
 <style>
@@ -49,23 +60,37 @@
     flex: 1;
     width: 100%;
     height: 100%;
-    position: relative;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
     background: #1e1e2e;
   }
   .terminal-area.hidden {
     display: none;
   }
+
+  /* Output region takes all available space above InputBar */
+  .output-region {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+  }
+
   .terminal-wrapper {
     position: absolute;
     inset: 0;
     display: none;
-    padding: 4px 0 0 4px;
+    padding: 8px 4px 0 8px;
   }
   .terminal-wrapper.active { display: block; }
 
   .terminal-wrapper :global(.xterm) {
     height: 100%;
-    padding: 4px 8px;
+    padding: 0 8px;
+  }
+  /* Hide xterm cursor since input goes through InputBar */
+  .terminal-wrapper :global(.xterm-cursor-layer) {
+    opacity: 0.3;
   }
 </style>

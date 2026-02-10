@@ -9,6 +9,32 @@
   import IconFolder from './icons/IconFolder.svelte'
 
   let { onupdate }: { onupdate: () => void } = $props()
+
+  // ── Drag-and-drop reorder ──
+  let dragIdx = $state<number | null>(null)
+  let dragOverIdx = $state<number | null>(null)
+
+  function handleDragStart(e: DragEvent, idx: number) {
+    dragIdx = idx
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', String(idx))
+    }
+  }
+
+  function handleDragOver(e: DragEvent, idx: number) {
+    e.preventDefault()
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+    dragOverIdx = idx
+  }
+
+  function handleDragEnd() {
+    if (dragIdx !== null && dragOverIdx !== null && dragIdx !== dragOverIdx) {
+      workspaceStore.reorder(dragIdx, dragOverIdx)
+    }
+    dragIdx = null
+    dragOverIdx = null
+  }
 </script>
 
 <aside class="sidebar" class:collapsed={uiStore.sidebarCollapsed}>
@@ -29,19 +55,24 @@
       </button>
     </div>
     <div class="workspace-list">
-      {#if workspaceStore.sorted.length === 0}
+      {#if workspaceStore.list.length === 0}
         <div class="empty-state">
           <IconFolder size={32} />
           <p>No workspaces yet.<br />Add a repository to get started.</p>
         </div>
       {:else}
-        {#each workspaceStore.sorted as ws (ws.path)}
+        {#each workspaceStore.list as ws, idx (ws.path)}
           <WorkspaceItem
             workspace={ws}
+            index={idx}
             isActive={workspaceStore.active?.path === ws.path}
             onselect={() => { workspaceStore.select(ws).then(show => { if (show) uiStore.showToast(`Switched to ${ws.name}`, 'info') }) }}
             oncontextmenu={(e) => { e.preventDefault(); uiStore.openContextMenu(e.clientX, e.clientY, ws.path) }}
-            ondblclick={() => { workspaceStore.select(ws, true); /* parent handles claude launch */ }}
+            ondblclick={() => { workspaceStore.select(ws, true); }}
+            ondragstart={(e) => handleDragStart(e, idx)}
+            ondragover={(e) => handleDragOver(e, idx)}
+            ondragend={handleDragEnd}
+            dragOverIndex={dragOverIdx}
           />
         {/each}
       {/if}

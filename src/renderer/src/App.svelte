@@ -93,7 +93,8 @@
     try {
       const size = terminalStore.attach(id, `terminal-${id}`)
       uiStore.termSize = `${size.cols}x${size.rows}`
-      setTimeout(() => terminalStore.writeToPty(id, 'claude\n'), 600)
+      // Launch claude command after shell is ready
+      setTimeout(() => terminalStore.sendInput(id, 'claude'), 600)
     } catch (e) {
       console.error('[zeus] Failed to attach terminal:', e)
     }
