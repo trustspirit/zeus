@@ -135,6 +135,7 @@ export interface DocTab {
 // ── Claude Conversation (headless mode) ─────────────────────────────────────
 export interface ContentBlock {
   type: 'text' | 'tool_use' | 'tool_result' | 'thinking'
+  id?: string            // block id (tool_use blocks have a unique id from the API)
   text?: string
   name?: string          // tool name for tool_use
   input?: Record<string, unknown>
@@ -169,13 +170,16 @@ export interface QuickReply {
 
 /** Active subagent (Task tool) info */
 export interface SubagentInfo {
+  id: string                // unique id (tool_use block id or generated)
+  blockIndex: number        // content block index in the streaming message
   name: string              // agent name (e.g. "frontend-architect", "code-reviewer")
-  color: string             // deterministic color hex based on name
+  color: string             // hex color from agent .md frontmatter or hash fallback
   description: string       // from Task input.description or prompt snippet
   nestedStatus: string      // current tool activity inside the subagent
   nestedToolName?: string   // current tool name (for icon display)
   toolsUsed: string[]       // history of tools used by this subagent
   startedAt: number
+  finished: boolean         // true once tool_result received for this agent
 }
 
 export interface ClaudeConversation {
@@ -191,8 +195,8 @@ export interface ClaudeConversation {
   streamingStatus: string
   /** Pending prompt from Claude Code waiting for user response */
   pendingPrompt: PendingPrompt | null
-  /** Active subagent (Task tool) info — set while a subagent is running */
-  activeSubagent: SubagentInfo | null
+  /** Active subagents — supports parallel agent teams */
+  activeSubagents: SubagentInfo[]
   /** Quick-reply buttons when the model asks a numbered-choice question */
   quickReplies: QuickReply[]
 }

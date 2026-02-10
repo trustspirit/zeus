@@ -331,7 +331,7 @@ class ClaudeSessionStore {
       streamingBlocks: [],
       streamingStatus: '',
       pendingPrompt: null,
-      activeSubagent: null,
+      activeSubagents: [],
       quickReplies: []
     }
 
@@ -383,7 +383,7 @@ class ClaudeSessionStore {
       streamingBlocks: [],
       streamingStatus: '',
       pendingPrompt: null,
-      activeSubagent: null,
+      activeSubagents: [],
       quickReplies: []
     }
 
@@ -430,7 +430,7 @@ class ClaudeSessionStore {
       conv.streamingBlocks = []
       conv.streamingStatus = ''
       conv.pendingPrompt = null
-      conv.activeSubagent = null
+      conv.activeSubagents = []
     }
 
     // Clear quick replies from previous turn
@@ -478,7 +478,7 @@ class ClaudeSessionStore {
       conv.streamingBlocks = []
       conv.streamingStatus = ''
       conv.pendingPrompt = null
-      conv.activeSubagent = null
+      conv.activeSubagents = []
       conv.quickReplies = []
     }
 
@@ -535,7 +535,7 @@ class ClaudeSessionStore {
       conv.isStreaming = false
       conv.streamingStatus = ''
       conv.pendingPrompt = null
-      conv.activeSubagent = null
+      conv.activeSubagents = []
       this.conversations = [...this.conversations]
     }
   }
@@ -620,69 +620,101 @@ class ClaudeSessionStore {
       conv.streamingBlocks = blocks
       this._updateStatusFromBlocks(conv, blocks, text)
 
-      // Detect subagent (Task) tool_use in the blocks
-      const taskBlock = blocks.find((b) => b.type === 'tool_use' && b.name && isSubagentTool(b.name))
-      if (taskBlock && taskBlock.input) {
-        if (!conv.activeSubagent) {
-          const agentName = extractSubagentName(taskBlock.name!, taskBlock.input)
-          conv.activeSubagent = {
-            name: agentName,
-            color: resolveAgentColor(agentName),
-            description: extractSubagentDesc(taskBlock.input),
-            nestedStatus: 'Starting…',
-            toolsUsed: [],
-            startedAt: Date.now()
+      // Detect ALL subagent (Task) tool_use blocks — supports parallel agents
+      const knownIds = new Set(conv.activeSubagents.map((s) => s.id))
+      for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i]
+        if (b.type === 'tool_use' && b.name && isSubagentTool(b.name) && b.input) {
+          const blockId = `sa-${i}`
+          if (!knownIds.has(blockId)) {
+            const agentName = extractSubagentName(b.name, b.input)
+            conv.activeSubagents = [...conv.activeSubagents, {
+              id: blockId,
+              blockIndex: i,
+              name: agentName,
+              color: resolveAgentColor(agentName),
+              description: extractSubagentDesc(b.input),
+              nestedStatus: 'Starting…',
+              toolsUsed: [],
+              startedAt: Date.now(),
+              finished: false
+            }]
           }
         }
       }
-      // Detect subagent result (task finished): if we had a subagent and now see a tool_result after it
-      const lastTaskIdx = blocks.findLastIndex((b) => b.type === 'tool_use' && b.name && isSubagentTool(b.name))
-      if (lastTaskIdx >= 0 && conv.activeSubagent) {
-        const hasResultAfter = blocks.slice(lastTaskIdx + 1).some((b) => b.type === 'tool_result' || b.type === 'text')
-        if (hasResultAfter) {
-          conv.activeSubagent = null
+      // Detect finished subagents: a tool_result after a Task block means that agent is done
+      if (conv.activeSubagents.length > 0) {
+        let taskResultCount = 0
+        let lastTaskBlockIdx = -1
+        for (let i = 0; i < blocks.length; i++) {
+          if (blocks[i].type === 'tool_use' && blocks[i].name && isSubagentTool(blocks[i].name!)) {
+            lastTaskBlockIdx = i
+          }
+        }
+        // Count tool_results after the last task block
+        for (let i = lastTaskBlockIdx + 1; i < blocks.length; i++) {
+          if (blocks[i].type === 'tool_result') taskResultCount++
+          if (blocks[i].type === 'text') taskResultCount += conv.activeSubagents.length // text after tasks = all done
+        }
+        if (taskResultCount >= conv.activeSubagents.length) {
+          conv.activeSubagents = []
         }
       }
 
     } else if (event.type === 'content_block_start') {
       // A new content block has started (text, tool_use, thinking)
       const cb = any.content_block as Record<string, unknown> | undefined
+      const blockIndex = typeof any.index === 'number' ? (any.index as number) : -1
+
       if (cb?.type === 'tool_use' && typeof cb.name === 'string') {
         const input = (cb.input && typeof cb.input === 'object') ? cb.input as Record<string, unknown> : {}
+        const blockId = typeof cb.id === 'string' ? (cb.id as string) : `sa-${blockIndex}`
 
         if (isSubagentTool(cb.name)) {
-          // Subagent starting
+          // New subagent starting — add to array (don't overwrite)
           const agentName = extractSubagentName(cb.name, input)
-          conv.activeSubagent = {
-            name: agentName,
-            color: resolveAgentColor(agentName),
-            description: extractSubagentDesc(input),
-            nestedStatus: 'Starting…',
-            toolsUsed: [],
-            startedAt: Date.now()
+          const existing = conv.activeSubagents.find((s) => s.id === blockId)
+          if (!existing) {
+            conv.activeSubagents = [...conv.activeSubagents, {
+              id: blockId,
+              blockIndex,
+              name: agentName,
+              color: resolveAgentColor(agentName),
+              description: extractSubagentDesc(input),
+              nestedStatus: 'Starting…',
+              toolsUsed: [],
+              startedAt: Date.now(),
+              finished: false
+            }]
           }
           conv.streamingStatus = this._formatToolStatus(cb.name, input)
-        } else if (conv.activeSubagent) {
-          // Tool inside subagent — update nested status
-          conv.activeSubagent.nestedStatus = this._formatToolStatus(cb.name, input)
-          conv.activeSubagent.nestedToolName = cb.name
-          if (!conv.activeSubagent.toolsUsed.includes(cb.name)) {
-            conv.activeSubagent.toolsUsed = [...conv.activeSubagent.toolsUsed, cb.name]
+        } else if (conv.activeSubagents.length > 0) {
+          // Tool inside a subagent — update the most recently started (unfinished) agent
+          const running = conv.activeSubagents.filter((s) => !s.finished)
+          const target = running[running.length - 1]
+          if (target) {
+            target.nestedStatus = this._formatToolStatus(cb.name, input)
+            target.nestedToolName = cb.name
+            if (!target.toolsUsed.includes(cb.name)) {
+              target.toolsUsed = [...target.toolsUsed, cb.name]
+            }
           }
           conv.streamingStatus = this._formatToolStatus(cb.name, input)
         } else {
           conv.streamingStatus = this._formatToolStatus(cb.name, input)
         }
       } else if (cb?.type === 'thinking') {
-        if (conv.activeSubagent) {
-          conv.activeSubagent.nestedStatus = 'Thinking…'
-          conv.activeSubagent.nestedToolName = undefined
+        if (conv.activeSubagents.length > 0) {
+          const running = conv.activeSubagents.filter((s) => !s.finished)
+          const target = running[running.length - 1]
+          if (target) { target.nestedStatus = 'Thinking…'; target.nestedToolName = undefined }
         }
         conv.streamingStatus = 'Thinking…'
       } else if (cb?.type === 'text') {
-        if (conv.activeSubagent) {
-          conv.activeSubagent.nestedStatus = 'Writing…'
-          conv.activeSubagent.nestedToolName = undefined
+        if (conv.activeSubagents.length > 0) {
+          const running = conv.activeSubagents.filter((s) => !s.finished)
+          const target = running[running.length - 1]
+          if (target) { target.nestedStatus = 'Writing…'; target.nestedToolName = undefined }
         }
         conv.streamingStatus = 'Writing…'
       }
@@ -706,7 +738,10 @@ class ClaudeSessionStore {
 
     } else if (event.type === 'content_block_stop') {
       // Block finished — status will be updated by next block or result
-      conv.streamingStatus = conv.activeSubagent ? conv.activeSubagent.nestedStatus : 'Processing…'
+      const running = conv.activeSubagents.filter((s) => !s.finished)
+      conv.streamingStatus = running.length > 0
+        ? running.map((s) => s.nestedStatus).filter(Boolean).join(' | ') || 'Processing…'
+        : 'Processing…'
 
     } else if (event.type === 'result') {
       // Final result — use result text if available
@@ -714,7 +749,7 @@ class ClaudeSessionStore {
         conv.streamingContent = event.result
       }
       conv.streamingStatus = ''
-      conv.activeSubagent = null
+      conv.activeSubagents = []
 
     } else if (event.type === 'system') {
       conv.streamingStatus = 'Initializing…'

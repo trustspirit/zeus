@@ -62,7 +62,7 @@
   let elapsedTick = $state(0)
   let elapsedTimer: ReturnType<typeof setInterval> | null = null
   $effect(() => {
-    if (conv?.activeSubagent) {
+    if (conv?.activeSubagents && conv.activeSubagents.length > 0) {
       if (!elapsedTimer) {
         elapsedTimer = setInterval(() => { elapsedTick++ }, 1000)
       }
@@ -401,27 +401,36 @@
                       </button>
                     </form>
                   </div>
-                {:else if conv.activeSubagent}
-                  <!-- Subagent panel: shown when Task tool is running -->
-                  {@const sa = conv.activeSubagent}
-                  <div class="subagent-panel" style="border-color: {sa.color}33; background: linear-gradient(135deg, {sa.color}0a, {sa.color}06);">
-                    <div class="subagent-header">
-                      <span class="subagent-dot" style="background: {sa.color};"></span>
-                      <span class="subagent-name" style="color: {sa.color};">{sa.name}</span>
-                      <span class="subagent-elapsed">{formatElapsed(sa.startedAt)}</span>
+                {:else if conv.activeSubagents && conv.activeSubagents.length > 0}
+                  <!-- Subagent panels: supports parallel agent teams -->
+                  {#if conv.activeSubagents.length > 1}
+                    <div class="subagent-team-header">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                      <span>{conv.activeSubagents.length} agents running in parallel</span>
                     </div>
-                    <div class="subagent-desc">{sa.description}</div>
-                    <div class="subagent-activity">
-                      <span class="subagent-pulse" style="background: {sa.color};"></span>
-                      <span class="subagent-status">{sa.nestedStatus || 'Working…'}</span>
-                    </div>
-                    {#if sa.toolsUsed.length > 0}
-                      <div class="subagent-tools">
-                        {#each sa.toolsUsed as tool (tool)}
-                          <span class="subagent-tool-chip" style="border-color: {sa.color}26; background: {sa.color}0d;">{tool}</span>
-                        {/each}
+                  {/if}
+                  <div class="subagent-grid" class:parallel={conv.activeSubagents.length > 1}>
+                    {#each conv.activeSubagents.filter(s => !s.finished) as sa (sa.id)}
+                      <div class="subagent-panel" style="border-color: {sa.color}33; background: linear-gradient(135deg, {sa.color}0a, {sa.color}06);">
+                        <div class="subagent-header">
+                          <span class="subagent-dot" style="background: {sa.color};"></span>
+                          <span class="subagent-name" style="color: {sa.color};">{sa.name}</span>
+                          <span class="subagent-elapsed">{formatElapsed(sa.startedAt)}</span>
+                        </div>
+                        <div class="subagent-desc">{sa.description}</div>
+                        <div class="subagent-activity">
+                          <span class="subagent-pulse" style="background: {sa.color};"></span>
+                          <span class="subagent-status">{sa.nestedStatus || 'Working…'}</span>
+                        </div>
+                        {#if sa.toolsUsed.length > 0}
+                          <div class="subagent-tools">
+                            {#each sa.toolsUsed as tool (tool)}
+                              <span class="subagent-tool-chip" style="border-color: {sa.color}26; background: {sa.color}0d;">{tool}</span>
+                            {/each}
+                          </div>
+                        {/if}
                       </div>
-                    {/if}
+                    {/each}
                   </div>
                 {:else}
                   <!-- Status line: always visible during streaming -->
@@ -582,11 +591,31 @@
   .status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 500px; }
 
   /* ── Subagent Panel ──────────────────────────────────────────────────── */
+  .subagent-team-header {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 10px; margin-bottom: 2px;
+    font-size: 11px; color: #7f848e;
+    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    font-weight: 500; letter-spacing: 0.02em;
+  }
+  .subagent-team-header svg { opacity: 0.6; }
+  .subagent-grid {
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .subagent-grid.parallel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 8px;
+  }
   .subagent-panel {
     display: flex; flex-direction: column; gap: 6px;
-    padding: 10px 12px; margin-top: 8px;
+    padding: 10px 12px; margin-top: 4px;
     border: 1px solid; border-radius: 10px;
     animation: status-fade-in 200ms ease;
+    min-width: 0;
+  }
+  .subagent-grid.parallel .subagent-panel {
+    margin-top: 0;
   }
   .subagent-header {
     display: flex; align-items: center; gap: 8px;
