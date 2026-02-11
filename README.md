@@ -4,7 +4,7 @@
 
 Zeus wraps Claude Code in a purpose-built interface — a dedicated input bar, workspace switching, skill management, docs preview, and IDE integration — all in one window. Stop juggling terminals and config files. Just open Zeus and code.
 
-![Zeus Interface](assets/zeus-hero.png)
+![Zeus Interface](assets/zeus-main.png)
 
 ---
 
@@ -31,7 +31,7 @@ Organize your projects with a dedicated sidebar. Switch contexts instantly witho
 
 Access your Skills, MCP servers, and Documentation in a unified right panel.
 
-![Right Panel](assets/zeus-right-panel.png)
+![Right Panel](assets/right-panel.png)
 
 - **Skills**: Manage and preview your available Claude skills.
 - **MCP**: Configure and monitor Model Context Protocol servers.
@@ -41,7 +41,7 @@ Access your Skills, MCP servers, and Documentation in a unified right panel.
 
 Tailor Zeus to your preference with built-in themes including the default Claude Code dark mode, a warm Anthropic light theme, and a refined dark theme.
 
-![Settings Modal](assets/zeus-settings.png)
+![Settings Modal](assets/settings.png)
 
 ---
 
