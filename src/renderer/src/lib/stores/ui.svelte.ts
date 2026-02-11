@@ -173,9 +173,9 @@ class UIStore {
   async setModel(modelId: string) {
     this.selectedModel = modelId
     try {
-      const config = await window.zeus.claudeConfig.read() as Record<string, unknown>
+      const config = await window.zeus.claudeConfig.read()
       config.model = modelId
-      await window.zeus.claudeConfig.write(config as object)
+      await window.zeus.claudeConfig.write(config)
     } catch { /* ignore */ }
   }
 }

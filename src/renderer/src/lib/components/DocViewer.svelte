@@ -100,6 +100,7 @@
     max-width: 820px; width: 100%;
     font-size: 15px; line-height: 1.75; color: #abb2bf;
     font-family: 'Pretendard Variable', Pretendard, -apple-system, sans-serif;
+    overflow-wrap: break-word; word-break: break-word;
   }
 
   /* ── Markdown styles ─────────────────────────────────────────── */
@@ -126,10 +127,12 @@
   }
   .markdown-content :global(pre) {
     background: #1e2127; border: 1px solid #3e4451; border-radius: 10px;
-    padding: 16px 20px; overflow-x: auto; margin: 0 0 20px;
+    padding: 16px 20px; margin: 0 0 20px;
+    overflow-x: hidden; white-space: pre-wrap; word-break: break-word;
   }
   .markdown-content :global(pre code) {
     background: none; padding: 0; color: #abb2bf; font-size: 13px; line-height: 1.6;
+    white-space: pre-wrap; word-break: break-word;
   }
   .markdown-content :global(blockquote) {
     border-left: 3px solid #4b5263; padding: 8px 20px; margin: 0 0 16px;
@@ -141,6 +144,7 @@
   .markdown-content :global(li) { margin: 6px 0; }
   .markdown-content :global(table) {
     width: 100%; border-collapse: collapse; margin: 0 0 20px; font-size: 14px;
+    table-layout: fixed; word-break: break-word;
   }
   .markdown-content :global(th) {
     text-align: left; padding: 10px 14px; border-bottom: 2px solid #3e4451;

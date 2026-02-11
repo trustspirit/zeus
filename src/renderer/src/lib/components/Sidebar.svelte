@@ -149,6 +149,7 @@
                 role="button"
                 tabindex="0"
                 onclick={() => selectWorkspace(ws)}
+                onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectWorkspace(ws) } }}
                 oncontextmenu={(e) => handleWsContext(e, ws.path)}
               >
                 <div class="ws-menu-icon" class:active={workspaceStore.active?.path === ws.path}>{ws.name.charAt(0)}</div>

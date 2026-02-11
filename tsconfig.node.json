@@ -6,7 +6,7 @@
     "target": "ESNext",
     "lib": ["ESNext"],
     "outDir": "./out",
-    "rootDir": "./src",
+    "rootDir": ".",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

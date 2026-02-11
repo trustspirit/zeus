@@ -11,7 +11,7 @@
   import IconClaude from './icons/IconClaude.svelte'
   import type { ClaudeMessage, ContentBlock } from '../types/index.js'
 
-  let scrollEl: HTMLDivElement
+  let scrollEl = $state<HTMLDivElement>(undefined!)
   let inputBarRef = $state<InputBar | undefined>(undefined)
   let changedFilesPanelRef = $state<ChangedFilesPanel | undefined>(undefined)
   let isDragOverView = $state(false)
@@ -349,6 +349,7 @@
                         input.value = ''
                       }
                     }}>
+                      <!-- svelte-ignore a11y_autofocus -->
                       <input
                         class="prompt-text-input"
                         type="text"
@@ -489,6 +490,7 @@
   .md {
     font-size: 14px; line-height: 1.7; color: #abb2bf;
     font-family: 'Pretendard Variable', Pretendard, -apple-system, sans-serif;
+    overflow-wrap: break-word; word-break: break-word;
   }
   .md :global(h1) { font-size: 20px; font-weight: 700; color: #e5c07b; margin: 20px 0 8px; }
   .md :global(h2) { font-size: 17px; font-weight: 600; color: #e5c07b; margin: 18px 0 6px; }
@@ -506,11 +508,13 @@
   }
   .md :global(pre) {
     background: #1e2127; border: 1px solid #3e4451; border-radius: 10px;
-    padding: 14px 16px; overflow-x: auto; margin: 8px 0 12px;
+    padding: 14px 16px; margin: 8px 0 12px;
+    overflow-x: hidden; white-space: pre-wrap; word-break: break-word;
   }
   .md :global(pre code) {
     background: none; padding: 0; color: #abb2bf; font-size: 13px;
     line-height: 1.55; border: none;
+    white-space: pre-wrap; word-break: break-word;
   }
   .md :global(blockquote) {
     border-left: 2px solid #4b5263; padding: 6px 14px; margin: 8px 0 12px;
@@ -520,7 +524,7 @@
   .md :global(li) { margin: 3px 0; }
   .md :global(li::marker) { color: #5c6370; }
   .md :global(hr) { border: none; border-top: 1px solid #3e4451; margin: 16px 0; }
-  .md :global(table) { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 13px; }
+  .md :global(table) { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 13px; table-layout: fixed; word-break: break-word; }
   .md :global(th) { text-align: left; padding: 8px 12px; border-bottom: 1px solid #3e4451; color: #abb2bf; font-weight: 600; }
   .md :global(td) { padding: 6px 12px; border-bottom: 1px solid #2c313a; }
   .md :global(details) {
@@ -595,7 +599,7 @@
   }
   .subagent-desc {
     font-size: 12px; color: #abb2bf; line-height: 1.5;
-    max-height: 60px; overflow: hidden; text-overflow: ellipsis;
+    word-break: break-word;
   }
   .subagent-activity {
     display: flex; align-items: center; gap: 6px;
@@ -608,7 +612,7 @@
     animation: pulse-ring 1.5s ease-in-out infinite;
   }
   .subagent-status {
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    word-break: break-word;
   }
   .subagent-tools {
     display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px;
@@ -637,16 +641,17 @@
     max-height: 200px; overflow-y: auto;
   }
   .prompt-tool {
-    display: flex; align-items: center; gap: 6px;
+    display: flex; align-items: flex-start; gap: 6px;
     padding: 6px 10px; background: #1e1f23; border-radius: 6px;
-    font-size: 12px; color: #abb2bf; overflow: hidden;
+    font-size: 12px; color: #abb2bf;
+    overflow-wrap: break-word; word-break: break-word;
   }
   .prompt-tool code {
     color: #c678dd; font-family: 'D2Coding', 'JetBrains Mono', monospace;
     font-size: 12px; background: none; padding: 0;
   }
   .prompt-tool-input {
-    color: #7f848e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: #7f848e; word-break: break-word;
   }
   .prompt-actions {
     display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px;
@@ -732,6 +737,6 @@
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
   }
   .quick-reply-label {
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    word-break: break-word;
   }
 </style>

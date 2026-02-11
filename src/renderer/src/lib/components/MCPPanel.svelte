@@ -496,12 +496,12 @@
                     </div>
                     {#if editingConnection}
                       <div class="edit-field">
-                        <label class="edit-field-label">Command</label>
-                        <input class="form-input small" bind:value={editCommand} placeholder="npx, node, python, or URL" />
+                        <label class="edit-field-label" for="edit-cmd-{server.name}">Command</label>
+                        <input id="edit-cmd-{server.name}" class="form-input small" bind:value={editCommand} placeholder="npx, node, python, or URL" />
                       </div>
                       <div class="edit-field">
-                        <label class="edit-field-label">Args</label>
-                        <input class="form-input small" bind:value={editArgs} placeholder="-y @some/mcp-server" />
+                        <label class="edit-field-label" for="edit-args-{server.name}">Args</label>
+                        <input id="edit-args-{server.name}" class="form-input small" bind:value={editArgs} placeholder="-y @some/mcp-server" />
                       </div>
                       <div class="edit-actions">
                         <button class="btn-sm secondary" onclick={() => cancelEditConnection(server)}>Cancel</button>
@@ -655,6 +655,7 @@
   {:else if activeTab === 'add'}
     <div class="tab-content">
       <div class="add-form">
+        <!-- svelte-ignore a11y_label_has_associated_control -->
         <!-- Transport selector -->
         <div class="form-group">
           <label class="form-label">Transport</label>
@@ -672,30 +673,31 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label">Server Name</label>
-          <input class="form-input" bind:value={newName} placeholder="e.g. github, sentry, my-server" />
+          <label class="form-label" for="mcp-new-name">Server Name</label>
+          <input id="mcp-new-name" class="form-input" bind:value={newName} placeholder="e.g. github, sentry, my-server" />
         </div>
 
         {#if transport === 'stdio'}
           <div class="form-group">
-            <label class="form-label">Command</label>
-            <input class="form-input" bind:value={newCommand} placeholder="e.g. npx, node, python" />
+            <label class="form-label" for="mcp-new-cmd">Command</label>
+            <input id="mcp-new-cmd" class="form-input" bind:value={newCommand} placeholder="e.g. npx, node, python" />
           </div>
           <div class="form-group">
-            <label class="form-label">Arguments <span class="hint">(space-separated)</span></label>
-            <input class="form-input" bind:value={newArgs} placeholder="e.g. -y @modelcontextprotocol/server-github" />
+            <label class="form-label" for="mcp-new-args">Arguments <span class="hint">(space-separated)</span></label>
+            <input id="mcp-new-args" class="form-input" bind:value={newArgs} placeholder="e.g. -y @modelcontextprotocol/server-github" />
           </div>
         {:else}
           <div class="form-group">
-            <label class="form-label">URL</label>
-            <input class="form-input" bind:value={newUrl} placeholder="https://mcp.example.com/mcp" />
+            <label class="form-label" for="mcp-new-url">URL</label>
+            <input id="mcp-new-url" class="form-input" bind:value={newUrl} placeholder="https://mcp.example.com/mcp" />
           </div>
           <div class="form-group">
-            <label class="form-label">Header <span class="hint">(optional, e.g. Authorization: Bearer ...)</span></label>
-            <input class="form-input" bind:value={newHeader} placeholder="Authorization: Bearer your-token" />
+            <label class="form-label" for="mcp-new-header">Header <span class="hint">(optional, e.g. Authorization: Bearer ...)</span></label>
+            <input id="mcp-new-header" class="form-input" bind:value={newHeader} placeholder="Authorization: Bearer your-token" />
           </div>
         {/if}
 
+        <!-- svelte-ignore a11y_label_has_associated_control -->
         <!-- Scope selector -->
         <div class="form-group">
           <label class="form-label">Scope</label>
@@ -710,6 +712,7 @@
         </div>
 
         {#if transport === 'stdio'}
+          <!-- svelte-ignore a11y_label_has_associated_control -->
           <div class="form-group">
             <label class="form-label">Environment Variables</label>
             {#each envEntries as entry, i (i)}
