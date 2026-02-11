@@ -43,7 +43,10 @@
     },
     "files": [
       "out/**/*",
-      "!node_modules"
+      "node_modules/node-pty/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**/*"
     ],
     "extraResources": [
       {
