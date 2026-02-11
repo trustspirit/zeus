@@ -181,6 +181,7 @@ export interface SubagentInfo {
   toolsUsed: string[]       // history of tools used by this subagent
   startedAt: number
   finished: boolean         // true once tool_result received for this agent
+  taskId?: string           // Claude Code internal task ID (used by TaskOutput to reference this agent)
 }
 
 /** Real-time token usage stats */

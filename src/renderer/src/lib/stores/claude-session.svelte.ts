@@ -524,6 +524,9 @@ class ClaudeSessionStore {
    */
   private _pendingSubagentInput = new Map<number, { convId: string; subagentId: string; partialJson: string }>()
 
+  /** Track pending aux tool (TaskOutput etc.) to resolve task_id from streaming input */
+  private _pendingAuxTool: { blockIndex: number; toolName: string; partialJson: string } | null = null
+
   /** Throttled reactivity trigger — batch rapid streaming events into one update per frame */
   private _reactivityPending = false
   private _triggerReactivity() {
@@ -625,6 +628,17 @@ class ClaudeSessionStore {
               }
             }
           }
+          // Try to capture task_id from the immediately following tool_result
+          if (i + 1 < blocks.length && blocks[i + 1].type === 'tool_result') {
+            const existing = conv.activeSubagents.find((s) => s.id === blockId)
+            if (existing && !existing.taskId) {
+              const resultContent = blocks[i + 1].content ?? ''
+              const tidMatch = resultContent.match(/task[_-]?id["\s:]+["']?([a-f0-9]{6,12})/i)
+              if (tidMatch) {
+                existing.taskId = tidMatch[1]
+              }
+            }
+          }
         }
       }
       // Detect finished subagents: a tool_result after the last Task/aux block means agents are done
@@ -678,7 +692,9 @@ class ClaudeSessionStore {
           conv.streamingStatus = this._formatToolStatus(cb.name, input)
         } else if (isSubagentAuxTool(cb.name)) {
           // TaskOutput / background_output / background_cancel — show as subagent status
-          conv.streamingStatus = subagentAuxLabel(cb.name, input)
+          conv.streamingStatus = subagentAuxLabel(cb.name, input, conv.activeSubagents)
+          // Track aux tool input_json_delta so we can resolve task_id once it arrives
+          this._pendingAuxTool = { blockIndex, toolName: cb.name, partialJson: '' }
           // Keep any existing active subagents alive during this wait
         } else if (conv.activeSubagents.length > 0) {
           // Tool inside a subagent — update the most recently started (unfinished) agent
@@ -726,6 +742,32 @@ class ClaudeSessionStore {
           // Try to extract subagent name/description from partial JSON
           this._tryUpdateSubagentFromPartialInput(conv, pending)
         }
+        // Also accumulate for aux tools (TaskOutput etc.) to resolve task_id
+        if (this._pendingAuxTool && this._pendingAuxTool.blockIndex === deltaIndex) {
+          this._pendingAuxTool.partialJson += delta.partial_json
+          // Try parsing to extract task_id and update status label
+          try {
+            const auxInput = JSON.parse(this._pendingAuxTool.partialJson) as Record<string, unknown>
+            conv.streamingStatus = subagentAuxLabel(this._pendingAuxTool.toolName, auxInput, conv.activeSubagents)
+            // Also try to link task_id to a subagent that doesn't have one yet
+            if (typeof auxInput.task_id === 'string' && conv.activeSubagents.length > 0) {
+              const tid = auxInput.task_id
+              const alreadyLinked = conv.activeSubagents.some((s) => s.taskId === tid)
+              if (!alreadyLinked) {
+                // Assign to the first subagent without a taskId
+                const unlinked = conv.activeSubagents.find((s) => !s.taskId && !s.finished)
+                if (unlinked) unlinked.taskId = tid
+              }
+            }
+          } catch {
+            // Partial JSON, try a simpler extract for task_id
+            const tidMatch = this._pendingAuxTool.partialJson.match(/"task_id"\s*:\s*"([a-f0-9]+)"/i)
+            if (tidMatch) {
+              const partialInput = { task_id: tidMatch[1], block: this._pendingAuxTool.partialJson.includes('"block":true') || this._pendingAuxTool.partialJson.includes('"block": true') }
+              conv.streamingStatus = subagentAuxLabel(this._pendingAuxTool.toolName, partialInput as unknown as Record<string, unknown>, conv.activeSubagents)
+            }
+          }
+        }
         conv.streamingStatus = conv.streamingStatus || 'Processing…'
       }
 
@@ -743,10 +785,16 @@ class ClaudeSessionStore {
             if (name) { sa.name = name; sa.color = getAgentColor(name) }
             const desc = extractSubagentDesc(fullInput)
             if (desc) sa.description = desc
+            // Capture task_id if available in input
+            if (typeof fullInput.task_id === 'string') sa.taskId = fullInput.task_id
             sa.nestedStatus = 'Executing…'
           }
         } catch { /* partial json, already handled incrementally */ }
         this._pendingSubagentInput.delete(stopIndex)
+      }
+      // Clear aux tool tracking when its block finishes
+      if (this._pendingAuxTool && this._pendingAuxTool.blockIndex === stopIndex) {
+        this._pendingAuxTool = null
       }
       // Block finished — status will be updated by next block or result
       const lastAgent = this._lastRunningAgent(conv)
@@ -772,6 +820,7 @@ class ClaudeSessionStore {
       conv.streamingStatus = ''
       conv.activeSubagents = []
       this._pendingSubagentInput.clear()
+      this._pendingAuxTool = null
 
     } else if (event.type === 'system') {
       conv.streamingStatus = 'Initializing…'

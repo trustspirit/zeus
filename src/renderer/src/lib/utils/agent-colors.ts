@@ -89,15 +89,44 @@ export function isSubagentAuxTool(name: string): boolean {
   return SUBAGENT_AUX_TOOLS.has(name.toLowerCase())
 }
 
-/** Human-readable label for a subagent auxiliary tool */
-export function subagentAuxLabel(name: string, input: Record<string, unknown>): string {
+/**
+ * Human-readable label for a subagent auxiliary tool.
+ * When subagents are provided, resolves task_id to a human-readable name.
+ */
+export function subagentAuxLabel(
+  name: string,
+  input: Record<string, unknown>,
+  subagents?: { taskId?: string; name: string; nestedStatus?: string }[]
+): string {
   const lower = name.toLowerCase()
   if (lower === 'taskoutput' || lower === 'background_output') {
     const taskId = typeof input.task_id === 'string' ? input.task_id : ''
     const blocking = input.block === true
+
+    // Try to resolve task_id to a known subagent name
+    let agentLabel = ''
+    let lastActivity = ''
+    if (taskId && subagents) {
+      const match = subagents.find((s) => s.taskId === taskId)
+      if (match) {
+        agentLabel = match.name
+        lastActivity = match.nestedStatus || ''
+      }
+    }
+    // Fallback: if only one active subagent, it's probably that one
+    if (!agentLabel && subagents && subagents.length === 1) {
+      agentLabel = subagents[0].name
+      lastActivity = subagents[0].nestedStatus || ''
+    }
+
+    const label = agentLabel || (taskId ? taskId.slice(0, 7) : 'subagent')
+    const activity = lastActivity && lastActivity !== 'Executing…' && lastActivity !== 'Starting…'
+      ? ` — ${lastActivity}`
+      : ''
+
     return blocking
-      ? `Waiting for subagent result${taskId ? ` (${taskId})` : ''}…`
-      : `Checking subagent status${taskId ? ` (${taskId})` : ''}…`
+      ? `Waiting for ${label}${activity}`
+      : `Checking ${label} status${activity}`
   }
   if (lower === 'taskcancel' || lower === 'background_cancel') {
     return input.all === true ? 'Cancelling all background tasks…' : 'Cancelling background task…'
