@@ -5,6 +5,7 @@
   import { claudeSessionStore } from '../stores/claude-session.svelte.js'
   import { skillsStore } from '../stores/skills.svelte.js'
   import { uiStore } from '../stores/ui.svelte.js'
+  import { isSubagentTool, extractSubagentName, resolveAgentColor } from '../utils/agent-colors.js'
   import InputBar from './InputBar.svelte'
   import ChangedFilesPanel from './ChangedFilesPanel.svelte'
   import IconClaude from './icons/IconClaude.svelte'
@@ -143,50 +144,9 @@
     return keys.map((k) => `${k}: ${JSON.stringify(input[k]).slice(0, 60)}`).join(', ')
   }
 
-  /** Check if a tool name is a subagent */
-  function isSubagent(name: string): boolean {
-    return name === 'Task' || name.startsWith('dispatch_agent') || name === 'Agents'
-  }
-
-  /** Named color keywords → hex (matches Claude Code's agent color palette) */
-  const AGENT_COLOR_MAP: Record<string, string> = {
-    blue: '#61afef', purple: '#c678dd', green: '#98c379', yellow: '#e5c07b',
-    cyan: '#56b6c2', orange: '#d19a66', red: '#e06c75', pink: '#e06c95',
-    magenta: '#c678dd', teal: '#56b6c2', lime: '#a9dc76', indigo: '#7c8cf5',
-    brown: '#be5046', white: '#abb2bf', gray: '#7f848e', grey: '#7f848e',
-  }
-  const SA_COLORS = [...new Set(Object.values(AGENT_COLOR_MAP))]
-
-  /** Look up an agent's color from customSkills frontmatter, then hash fallback */
+  /** Get agent color using shared utility with current skills data */
   function saColor(agentName: string): string {
-    const normalized = agentName.toLowerCase().replace(/-/g, '_')
-    for (const skill of skillsStore.customSkills) {
-      if (skill.kind !== 'agent') continue
-      const skillNorm = skill.name.toLowerCase().replace(/-/g, '_')
-      if (skillNorm === normalized || skillNorm.endsWith(normalized) || normalized.endsWith(skillNorm)) {
-        if (skill.color) return AGENT_COLOR_MAP[skill.color.toLowerCase()] ?? skill.color
-      }
-    }
-    // Hash fallback
-    let h = 0
-    for (let i = 0; i < agentName.length; i++) h = ((h << 5) - h + agentName.charCodeAt(i)) | 0
-    return SA_COLORS[Math.abs(h) % SA_COLORS.length]
-  }
-  /** Derive readable agent name from tool name + input */
-  function deriveAgentName(toolName: string, input?: Record<string, unknown>): string {
-    if (toolName.startsWith('dispatch_agent_')) return toolName.slice('dispatch_agent_'.length).replace(/_/g, '-')
-    if (input) {
-      if (typeof input.agent_name === 'string' && input.agent_name) return input.agent_name.replace(/_/g, '-')
-      if (typeof input.name === 'string' && input.name) return input.name.replace(/_/g, '-')
-    }
-    const desc = (input?.description || input?.prompt || '') as string
-    if (desc) {
-      const m = desc.match(/^([a-z][a-z0-9_-]{2,30})(?:\s|:|$)/i)
-      if (m) return m[1].toLowerCase().replace(/_/g, '-')
-      const words = desc.split(/\s+/).slice(0, 3).join(' ')
-      return words.length > 30 ? words.slice(0, 30) + '…' : words
-    }
-    return 'Subagent'
+    return resolveAgentColor(agentName, skillsStore.customSkills)
   }
 
   function renderBlocks(blocks: ContentBlock[]): string {
@@ -206,8 +166,8 @@
           break
         case 'tool_use': {
           const name = block.name ?? 'Tool'
-          if (isSubagent(name)) {
-            const agentName = deriveAgentName(name, block.input)
+          if (isSubagentTool(name)) {
+            const agentName = extractSubagentName(name, block.input ?? {})
             const color = saColor(agentName)
             const desc = block.input?.description || block.input?.prompt
             const descText = typeof desc === 'string'

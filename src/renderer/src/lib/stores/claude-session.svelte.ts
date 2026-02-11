@@ -1,6 +1,12 @@
 import type { ClaudeConversation, ClaudeMessage, ContentBlock, ClaudeStreamEvent, SavedSession, PendingPrompt, SubagentInfo, QuickReply } from '../types/index.js'
 import { uiStore } from './ui.svelte.js'
 import { skillsStore } from './skills.svelte.js'
+import {
+  isSubagentTool,
+  extractSubagentName,
+  extractSubagentDesc,
+  resolveAgentColor
+} from '../utils/agent-colors.js'
 
 // ── Claude Session Store (headless -p mode) ──────────────────────────────────
 
@@ -68,123 +74,22 @@ function extractText(content: unknown): { text: string; blocks: ContentBlock[] }
   return { text: textParts.join('\n'), blocks }
 }
 
-/** Readable label for a tool name (e.g. "Read" → "Reading file", "Bash" → "Running command") */
-function formatToolLabel(name: string): string {
-  const map: Record<string, string> = {
-    Read: 'Reading file', Write: 'Writing file', Edit: 'Editing file',
-    MultiEdit: 'Editing file', Bash: 'Running command', Glob: 'Finding files',
-    Grep: 'Searching', LS: 'Listing directory', Browser: 'Browsing',
-    NotebookEdit: 'Editing notebook', TodoRead: 'Reading tasks',
-    TodoWrite: 'Updating tasks', Task: 'Running subagent'
-  }
-  return map[name] || name
+/** Readable label for a tool name */
+const TOOL_LABELS: Record<string, string> = {
+  Read: 'Reading file', Write: 'Writing file', Edit: 'Editing file',
+  MultiEdit: 'Editing file', Bash: 'Running command', Glob: 'Finding files',
+  Grep: 'Searching', LS: 'Listing directory', Browser: 'Browsing',
+  NotebookEdit: 'Editing notebook', TodoRead: 'Reading tasks',
+  TodoWrite: 'Updating tasks', Task: 'Running subagent'
 }
 
-/** Check if a tool name is a subagent Task */
-function isSubagentTool(name: string): boolean {
-  return name === 'Task' || name.startsWith('dispatch_agent') || name === 'Agents'
-}
-
-/** Named color keywords → hex (matches Claude Code's agent color palette) */
-const AGENT_COLOR_MAP: Record<string, string> = {
-  blue: '#61afef',
-  purple: '#c678dd',
-  green: '#98c379',
-  yellow: '#e5c07b',
-  cyan: '#56b6c2',
-  orange: '#d19a66',
-  red: '#e06c75',
-  pink: '#e06c95',
-  magenta: '#c678dd',
-  teal: '#56b6c2',
-  lime: '#a9dc76',
-  indigo: '#7c8cf5',
-  brown: '#be5046',
-  white: '#abb2bf',
-  gray: '#7f848e',
-  grey: '#7f848e',
-}
-
-/** Fallback palette for hash-based assignment */
-const SUBAGENT_COLORS = Object.values(AGENT_COLOR_MAP).filter((v, i, a) => a.indexOf(v) === i)
-
-/** Resolve a named color keyword to hex */
-function resolveColorKeyword(keyword: string): string | null {
-  return AGENT_COLOR_MAP[keyword.toLowerCase()] ?? null
-}
-
-/** Deterministic fallback color from a string name */
-function colorForName(name: string): string {
-  let hash = 0
-  for (let i = 0; i < name.length; i++) {
-    hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0
-  }
-  return SUBAGENT_COLORS[Math.abs(hash) % SUBAGENT_COLORS.length]
-}
-
-/**
- * Look up an agent's defined color from customSkills (parsed from .md frontmatter).
- * Returns hex color or null if not found.
- */
-function lookupAgentColor(agentName: string): string | null {
-  const normalized = agentName.toLowerCase().replace(/-/g, '_')
-  for (const skill of skillsStore.customSkills) {
-    if (skill.kind !== 'agent') continue
-    const skillNorm = skill.name.toLowerCase().replace(/-/g, '_')
-    if (skillNorm === normalized || skillNorm.endsWith(normalized) || normalized.endsWith(skillNorm)) {
-      if (skill.color) return resolveColorKeyword(skill.color) ?? skill.color
-    }
-  }
-  return null
-}
-
-/** Resolve color for a subagent: agent-defined → hash-based fallback */
-function resolveAgentColor(agentName: string): string {
-  return lookupAgentColor(agentName) ?? colorForName(agentName)
-}
-
-/** Extract a human-readable agent name from the tool name and/or input */
-function extractSubagentName(toolName: string, input: Record<string, unknown>): string {
-  // dispatch_agent_frontend_architect → "frontend-architect"
-  if (toolName.startsWith('dispatch_agent_')) {
-    return toolName.slice('dispatch_agent_'.length).replace(/_/g, '-')
-  }
-  // Agents tool — input may carry agent_name or name
-  if (typeof input.agent_name === 'string' && input.agent_name) {
-    return input.agent_name.replace(/_/g, '-')
-  }
-  if (typeof input.name === 'string' && input.name) {
-    return input.name.replace(/_/g, '-')
-  }
-  // Task tool — try to derive a short name from description/prompt
-  const desc = (typeof input.description === 'string' && input.description)
-    || (typeof input.prompt === 'string' && input.prompt)
-    || (typeof input.task_description === 'string' && input.task_description as string)
-    || ''
-  if (desc) {
-    // If the description looks like an agent name pattern (kebab-case or snake_case, short)
-    const nameMatch = desc.match(/^([a-z][a-z0-9_-]{2,30})(?:\s|:|$)/i)
-    if (nameMatch) return nameMatch[1].toLowerCase().replace(/_/g, '-')
-    // Otherwise, use the first few meaningful words
-    const words = desc.split(/\s+/).slice(0, 3).join(' ')
-    return words.length > 30 ? words.slice(0, 30) + '…' : words
-  }
-  return 'Subagent'
-}
-
-/** Extract subagent description from tool input */
-function extractSubagentDesc(input: Record<string, unknown>): string {
-  if (typeof input.description === 'string' && input.description) return input.description
-  if (typeof input.prompt === 'string' && input.prompt) {
-    return input.prompt.length > 80 ? input.prompt.slice(0, 80) + '…' : input.prompt
-  }
-  if (typeof input.task_description === 'string') return input.task_description
-  return 'Subagent'
+/** Resolve agent color using the current skill store data */
+function getAgentColor(agentName: string): string {
+  return resolveAgentColor(agentName, skillsStore.customSkills)
 }
 
 /**
  * Detect numbered-choice questions in the last assistant message.
- * Matches patterns like "1) Option A\n2) Option B" or "1. Option A\n2. Option B"
  * Returns quick-reply options if the choices appear near the end of the text.
  */
 function detectQuickReplies(messages: ClaudeMessage[]): QuickReply[] {
@@ -195,7 +100,6 @@ function detectQuickReplies(messages: ClaudeMessage[]): QuickReply[] {
   const text = lastMsg.content
   const lines = text.split('\n')
 
-  // Find numbered-choice lines: "1) ...", "2. ...", "  3) ...", etc.
   const choiceIndices: number[] = []
   const choices: QuickReply[] = []
 
@@ -207,15 +111,10 @@ function detectQuickReplies(messages: ClaudeMessage[]): QuickReply[] {
     }
   }
 
-  // Must have 2+ choices and they should appear near the end of the message
-  // (not random numbered lists in the middle of a long explanation)
   if (choices.length >= 2 && choiceIndices.length >= 2) {
     const lastChoiceLine = choiceIndices[choiceIndices.length - 1]
-    // Choices should be within the last ~10 lines (allowing a few trailing lines after)
     const trailingLines = lines.length - 1 - lastChoiceLine
-    if (trailingLines <= 5) {
-      return choices
-    }
+    if (trailingLines <= 5) return choices
   }
 
   return []
@@ -544,14 +443,23 @@ class ClaudeSessionStore {
 
   /** Format tool status with detail from input */
   private _formatToolStatus(toolName: string, input: Record<string, unknown>): string {
-    const label = formatToolLabel(toolName)
-    let detail = ''
-    if (input.command) detail = String(input.command).slice(0, 60)
-    else if (input.file_path) detail = String(input.file_path)
-    else if (input.pattern) detail = String(input.pattern)
-    else if (input.query) detail = String(input.query).slice(0, 60)
-    else if (input.path) detail = String(input.path)
+    const label = TOOL_LABELS[toolName] || toolName
+    const detail = input.command ? String(input.command).slice(0, 60)
+      : input.file_path ? String(input.file_path)
+      : input.pattern ? String(input.pattern)
+      : input.query ? String(input.query).slice(0, 60)
+      : input.path ? String(input.path)
+      : ''
     return detail ? `${label}: ${detail}` : label
+  }
+
+  /** Get the last unfinished subagent (avoids repeated .filter() calls in hot path) */
+  private _lastRunningAgent(conv: ClaudeConversation): SubagentInfo | null {
+    const agents = conv.activeSubagents
+    for (let i = agents.length - 1; i >= 0; i--) {
+      if (!agents[i].finished) return agents[i]
+    }
+    return null
   }
 
   /** Update streaming status from blocks array */
@@ -632,7 +540,7 @@ class ClaudeSessionStore {
               id: blockId,
               blockIndex: i,
               name: agentName,
-              color: resolveAgentColor(agentName),
+              color: getAgentColor(agentName),
               description: extractSubagentDesc(b.input),
               nestedStatus: 'Starting…',
               toolsUsed: [],
@@ -673,13 +581,12 @@ class ClaudeSessionStore {
         if (isSubagentTool(cb.name)) {
           // New subagent starting — add to array (don't overwrite)
           const agentName = extractSubagentName(cb.name, input)
-          const existing = conv.activeSubagents.find((s) => s.id === blockId)
-          if (!existing) {
+          if (!conv.activeSubagents.some((s) => s.id === blockId)) {
             conv.activeSubagents = [...conv.activeSubagents, {
               id: blockId,
               blockIndex,
               name: agentName,
-              color: resolveAgentColor(agentName),
+              color: getAgentColor(agentName),
               description: extractSubagentDesc(input),
               nestedStatus: 'Starting…',
               toolsUsed: [],
@@ -690,8 +597,7 @@ class ClaudeSessionStore {
           conv.streamingStatus = this._formatToolStatus(cb.name, input)
         } else if (conv.activeSubagents.length > 0) {
           // Tool inside a subagent — update the most recently started (unfinished) agent
-          const running = conv.activeSubagents.filter((s) => !s.finished)
-          const target = running[running.length - 1]
+          const target = this._lastRunningAgent(conv)
           if (target) {
             target.nestedStatus = this._formatToolStatus(cb.name, input)
             target.nestedToolName = cb.name
@@ -704,18 +610,12 @@ class ClaudeSessionStore {
           conv.streamingStatus = this._formatToolStatus(cb.name, input)
         }
       } else if (cb?.type === 'thinking') {
-        if (conv.activeSubagents.length > 0) {
-          const running = conv.activeSubagents.filter((s) => !s.finished)
-          const target = running[running.length - 1]
-          if (target) { target.nestedStatus = 'Thinking…'; target.nestedToolName = undefined }
-        }
+        const target = this._lastRunningAgent(conv)
+        if (target) { target.nestedStatus = 'Thinking…'; target.nestedToolName = undefined }
         conv.streamingStatus = 'Thinking…'
       } else if (cb?.type === 'text') {
-        if (conv.activeSubagents.length > 0) {
-          const running = conv.activeSubagents.filter((s) => !s.finished)
-          const target = running[running.length - 1]
-          if (target) { target.nestedStatus = 'Writing…'; target.nestedToolName = undefined }
-        }
+        const target = this._lastRunningAgent(conv)
+        if (target) { target.nestedStatus = 'Writing…'; target.nestedToolName = undefined }
         conv.streamingStatus = 'Writing…'
       }
 
@@ -738,10 +638,8 @@ class ClaudeSessionStore {
 
     } else if (event.type === 'content_block_stop') {
       // Block finished — status will be updated by next block or result
-      const running = conv.activeSubagents.filter((s) => !s.finished)
-      conv.streamingStatus = running.length > 0
-        ? running.map((s) => s.nestedStatus).filter(Boolean).join(' | ') || 'Processing…'
-        : 'Processing…'
+      const lastAgent = this._lastRunningAgent(conv)
+      conv.streamingStatus = lastAgent ? (lastAgent.nestedStatus || 'Processing…') : 'Processing…'
 
     } else if (event.type === 'result') {
       // Final result — use result text if available

@@ -3,6 +3,7 @@
   import { workspaceStore } from '../stores/workspace.svelte.js'
   import { uiStore } from '../stores/ui.svelte.js'
   import { claudeSessionStore } from '../stores/claude-session.svelte.js'
+  import { resolveColorKeyword } from '../utils/agent-colors.js'
   import type { CustomSkill } from '../types/index.js'
 
   /** Track collapsed groups */
@@ -126,15 +127,10 @@
     return subdir.split('/').map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join(' / ')
   }
 
-  /** Resolve agent color keyword to hex for display */
-  const COLOR_MAP: Record<string, string> = {
-    blue: '#61afef', purple: '#c678dd', green: '#98c379', yellow: '#e5c07b',
-    cyan: '#56b6c2', orange: '#d19a66', red: '#e06c75', pink: '#e06c95',
-    magenta: '#c678dd', teal: '#56b6c2', lime: '#a9dc76', indigo: '#7c8cf5',
-  }
+  /** Resolve agent color keyword to hex for display (delegates to shared utility) */
   function resolveColor(keyword?: string): string | null {
     if (!keyword) return null
-    return COLOR_MAP[keyword.toLowerCase()] ?? null
+    return resolveColorKeyword(keyword) ?? null
   }
 
 </script>
