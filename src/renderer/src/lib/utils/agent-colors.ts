@@ -96,7 +96,7 @@ export function isSubagentAuxTool(name: string): boolean {
 export function subagentAuxLabel(
   name: string,
   input: Record<string, unknown>,
-  subagents?: { taskId?: string; name: string; nestedStatus?: string }[]
+  subagents?: { taskId?: string; name: string; nestedStatus?: string; finished?: boolean }[]
 ): string {
   const lower = name.toLowerCase()
   if (lower === 'taskoutput' || lower === 'background_output') {
@@ -113,14 +113,23 @@ export function subagentAuxLabel(
         lastActivity = match.nestedStatus || ''
       }
     }
-    // Fallback: if only one active subagent, it's probably that one
-    if (!agentLabel && subagents && subagents.length === 1) {
-      agentLabel = subagents[0].name
-      lastActivity = subagents[0].nestedStatus || ''
+    // Fallback: if only one active (unfinished) subagent, it's probably that one
+    if (!agentLabel && subagents) {
+      const active = subagents.filter((s) => !s.finished)
+      if (active.length === 1) {
+        agentLabel = active[0].name
+        lastActivity = active[0].nestedStatus || ''
+      } else if (active.length > 1) {
+        // Multiple agents: try the most recently started (last in array) that doesn't have a result yet
+        const candidate = active[active.length - 1]
+        agentLabel = candidate.name
+        lastActivity = candidate.nestedStatus || ''
+      }
     }
 
-    const label = agentLabel || (taskId ? taskId.slice(0, 7) : 'subagent')
-    const activity = lastActivity && lastActivity !== 'Executing…' && lastActivity !== 'Starting…'
+    // Human-readable label — never show raw hash to users
+    const label = agentLabel || 'agent'
+    const activity = lastActivity && !UNINFORMATIVE_STATUSES.has(lastActivity)
       ? ` — ${lastActivity}`
       : ''
 
@@ -132,6 +141,36 @@ export function subagentAuxLabel(
     return input.all === true ? 'Cancelling all background tasks…' : 'Cancelling background task…'
   }
   return name
+}
+
+/** Statuses that are too generic to display as "activity" context */
+const UNINFORMATIVE_STATUSES = new Set([
+  'Executing…', 'Starting…', 'Working…', 'Processing…', 'Preparing…'
+])
+
+/**
+ * Build a summary string describing what all active subagents are doing.
+ * Used to replace the vague "Processing…" status.
+ */
+export function buildSubagentSummary(
+  subagents: { name: string; nestedStatus?: string; finished?: boolean }[]
+): string {
+  const active = subagents.filter((s) => !s.finished)
+  if (active.length === 0) return ''
+
+  // Collect informative statuses
+  const details = active
+    .map((s) => {
+      const status = s.nestedStatus || ''
+      if (!status || UNINFORMATIVE_STATUSES.has(status)) return null
+      return `${s.name}: ${status}`
+    })
+    .filter(Boolean)
+
+  if (details.length > 0) return details[0]!
+  // All agents running but no specific activity — show agent count
+  if (active.length === 1) return `${active[0].name} working…`
+  return `${active.length} agents working…`
 }
 
 // ── Name Extraction ────────────────────────────────────────────────────────────

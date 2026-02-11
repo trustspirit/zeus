@@ -119,7 +119,7 @@
     if (cached) return cached
     try {
       const raw = marked.parse(text, { async: false }) as string
-      const html = DOMPurify.sanitize(raw, { ADD_TAGS: ['details', 'summary'], ADD_ATTR: ['style'] })
+      const html = DOMPurify.sanitize(raw, { ADD_TAGS: ['details', 'summary'], ADD_ATTR: ['style', 'class'] })
       if (mdCache.size >= MD_CACHE_MAX) {
         const firstKey = mdCache.keys().next().value
         if (firstKey !== undefined) mdCache.delete(firstKey)
@@ -131,17 +131,80 @@
     }
   }
 
-  function formatToolName(name: string): string {
-    return name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  /** Human-readable tool labels — matches Claude Code CLI style */
+  const TOOL_DISPLAY: Record<string, string> = {
+    read: 'Read', write: 'Write', edit: 'Edit', multiedit: 'Multi-Edit',
+    bash: 'Bash', glob: 'Glob', grep: 'Grep', ls: 'List',
+    browser: 'Browser', notebookedit: 'Notebook Edit',
+    todoread: 'Todo Read', todowrite: 'Todo Write',
+    webfetch: 'Web Fetch', search: 'Search'
   }
 
-  function formatToolInput(input: Record<string, unknown>): string {
-    if (input.command) return String(input.command)
-    if (input.file_path) return String(input.file_path)
-    if (input.query) return String(input.query)
-    const keys = Object.keys(input)
-    if (keys.length === 0) return ''
-    return keys.map((k) => `${k}: ${JSON.stringify(input[k]).slice(0, 60)}`).join(', ')
+  function formatToolName(name: string): string {
+    return TOOL_DISPLAY[name.toLowerCase()] || name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  }
+
+  /** Format tool invocation in CLI-like compact style */
+  function formatToolCompact(name: string, input: Record<string, unknown>): string {
+    const lower = name.toLowerCase()
+    // Read/Write/Edit — show file path
+    if ((lower === 'read' || lower === 'write' || lower === 'edit' || lower === 'multiedit') && input.file_path) {
+      return `${formatToolName(name)} \`${input.file_path}\``
+    }
+    // Bash — show command
+    if (lower === 'bash' && input.command) {
+      const cmd = String(input.command)
+      return `Bash \`${cmd.length > 80 ? cmd.slice(0, 80) + '…' : cmd}\``
+    }
+    // Grep — show pattern + optional path
+    if (lower === 'grep' && input.pattern) {
+      const target = input.file_path || input.path || ''
+      return `Grep \`${input.pattern}\`${target ? ` in ${target}` : ''}`
+    }
+    // Glob — show pattern
+    if (lower === 'glob' && input.pattern) {
+      return `Glob \`${input.pattern}\``
+    }
+    // LS — show path
+    if (lower === 'ls' && input.path) {
+      return `List \`${input.path}\``
+    }
+    // Search — show query
+    if ((lower === 'search' || lower === 'webfetch') && input.query) {
+      return `${formatToolName(name)} "${String(input.query).slice(0, 60)}"`
+    }
+    // Generic fallback
+    const detail = input.file_path || input.command || input.query || input.pattern || input.path
+    if (detail) return `${formatToolName(name)} \`${String(detail).slice(0, 80)}\``
+    return formatToolName(name)
+  }
+
+  /** Summarize a tool result content into a compact one-liner */
+  function summarizeToolResult(content: string, prevToolName?: string): string {
+    const lines = content.trim().split('\n').filter(l => l.trim())
+    // For file reads — show line count
+    if (prevToolName?.toLowerCase() === 'read' && lines.length > 0) {
+      return `Loaded (${lines.length} lines)`
+    }
+    // For grep — count matches
+    if (prevToolName?.toLowerCase() === 'grep') {
+      const matchCount = lines.length
+      return matchCount > 0 ? `${matchCount} match${matchCount !== 1 ? 'es' : ''}` : 'No matches'
+    }
+    // For glob — count files
+    if (prevToolName?.toLowerCase() === 'glob') {
+      return `${lines.length} file${lines.length !== 1 ? 's' : ''} found`
+    }
+    // For bash — show first line of output
+    if (prevToolName?.toLowerCase() === 'bash' && lines.length > 0) {
+      const first = lines[0].slice(0, 100)
+      return lines.length > 1 ? `${first} (+${lines.length - 1} lines)` : first
+    }
+    // Generic: first line
+    if (lines.length > 0) {
+      return lines[0].slice(0, 100) + (lines.length > 1 ? ` (+${lines.length - 1} lines)` : '')
+    }
+    return 'Done'
   }
 
   /** Format token count compactly: 1234 → "1.2k", 12345 → "12.3k" */
@@ -166,7 +229,10 @@
   function renderBlocks(blocks: ContentBlock[]): string {
     const parts: string[] = []
     let inSubagent = false
-    for (const block of blocks) {
+    let lastToolName: string | undefined = undefined
+
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i]
       switch (block.type) {
         case 'text':
           if (block.text) {
@@ -177,6 +243,7 @@
               parts.push(block.text)
             }
           }
+          lastToolName = undefined
           break
         case 'tool_use': {
           const name = block.name ?? 'Tool'
@@ -187,33 +254,58 @@
             const descText = typeof desc === 'string'
               ? (desc.length > 120 ? desc.slice(0, 120) + '…' : desc)
               : ''
-            parts.push(`\n---\n<span style="color:${color}">**⦿ ${agentName}**</span> ${descText ? `— ${descText}` : ''}\n`)
+            parts.push(`\n<span class="tool-agent" style="color:${color}">⦿ **${agentName}**${descText ? `<span class="tool-desc"> — ${descText}</span>` : ''}</span>\n`)
             inSubagent = true
           } else if (isSubagentAuxTool(name)) {
-            // Background task output/cancel — show as status line, not raw block
             const label = subagentAuxLabel(name, block.input ?? {})
-            parts.push(`\n*⏳ ${label}*\n`)
+            parts.push(`\n<span class="tool-wait">⏳ ${label}</span>\n`)
           } else {
+            // CLI-like compact tool display with icon
             const prefix = inSubagent ? '> ' : ''
-            parts.push(`\n${prefix}\`\`\`tool\n${prefix}▶ ${formatToolName(name)}${block.input ? `  ${formatToolInput(block.input)}` : ''}\n${prefix}\`\`\`\n`)
+            const compact = formatToolCompact(name, block.input ?? {})
+            parts.push(`\n${prefix}<span class="tool-line">⏺ ${compact}</span>\n`)
           }
+          lastToolName = name
           break
         }
         case 'tool_result':
           if (block.content) {
+            const summary = summarizeToolResult(block.content, lastToolName)
             const content = block.content.length > 500 ? block.content.slice(0, 500) + '…' : block.content
-            parts.push(`\n<details><summary>Result</summary>\n\n\`\`\`\n${content}\n\`\`\`\n</details>\n`)
+            const prefix = inSubagent ? '> ' : ''
+            parts.push(`${prefix}<details><summary class="tool-result-summary">  ⎿ ${summary}</summary>\n\n\`\`\`\n${content}\n\`\`\`\n</details>\n`)
           }
+          lastToolName = undefined
           break
         case 'thinking':
           if (block.thinking) {
             const text = block.thinking.length > 200 ? block.thinking.slice(0, 200) + '…' : block.thinking
             parts.push(`\n<details><summary>Thinking</summary>\n\n${text}\n</details>\n`)
           }
+          lastToolName = undefined
           break
       }
     }
     return parts.join('\n')
+  }
+
+  /**
+   * Get any trailing text content that was received via text_delta AFTER
+   * the last assistant snapshot. This ensures real-time text appears even
+   * when blocks are being rendered.
+   */
+  function getTrailingContent(blocks: ContentBlock[], fullText: string): string {
+    if (!blocks.length || !fullText) return ''
+    // Compute total text in blocks
+    let blockTextLen = 0
+    for (const b of blocks) {
+      if (b.type === 'text' && b.text) blockTextLen += b.text.length
+    }
+    // If streamingContent has more text than what's in blocks, return the extra
+    if (fullText.length > blockTextLen) {
+      return fullText.slice(blockTextLen)
+    }
+    return ''
   }
 </script>
 
@@ -315,8 +407,9 @@
               </div>
               <div class="msg-content">
                 {#if conv.streamingBlocks.length > 0}
+                  {@const trailing = getTrailingContent(conv.streamingBlocks, conv.streamingContent)}
                   <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                  <div class="md">{@html renderMarkdown(renderBlocks(conv.streamingBlocks))}</div>
+                  <div class="md">{@html renderMarkdown(renderBlocks(conv.streamingBlocks) + (trailing ? '\n' + trailing : ''))}</div>
                 {:else if conv.streamingContent}
                   <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                   <div class="md">{@html renderMarkdown(conv.streamingContent)}</div>
@@ -613,6 +706,47 @@
   }
   .md :global(summary) { cursor: pointer; font-weight: 500; color: var(--text-muted); font-size: 13px; user-select: none; }
   .md :global(summary:hover) { color: var(--text-secondary); }
+
+  /* ── CLI-like tool activity ── */
+  .md :global(.tool-line) {
+    display: block;
+    font-size: 13px;
+    color: var(--text-secondary);
+    padding: 3px 0;
+    font-family: var(--font-mono);
+  }
+  .md :global(.tool-line code) {
+    color: var(--text-primary);
+    background: none;
+    padding: 0;
+    border: none;
+    font-size: 12px;
+  }
+  .md :global(.tool-agent) {
+    display: block;
+    font-size: 13px;
+    padding: 6px 0 2px;
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+  }
+  .md :global(.tool-agent .tool-desc) {
+    font-weight: 400;
+    font-size: 12px;
+    opacity: 0.7;
+  }
+  .md :global(.tool-wait) {
+    display: block;
+    font-size: 13px;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 3px 0;
+  }
+  .md :global(.tool-result-summary) {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    padding-left: 8px;
+  }
 
   /* ────────────────── Token Usage ────────────────── */
   .token-usage {

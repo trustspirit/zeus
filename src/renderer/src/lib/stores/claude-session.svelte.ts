@@ -1,10 +1,11 @@
-import type { ClaudeConversation, ClaudeMessage, ContentBlock, ClaudeStreamEvent, SavedSession, PendingPrompt, SubagentInfo, QuickReply } from '../types/index.js'
+import type { ClaudeConversation, ClaudeMessage, ContentBlock, ClaudeStreamEvent, SavedSession, PendingPrompt, SubagentInfo, QuickReply, SubagentActivityPayload } from '../types/index.js'
 import { uiStore } from './ui.svelte.js'
 import { skillsStore } from './skills.svelte.js'
 import {
   isSubagentTool,
   isSubagentAuxTool,
   subagentAuxLabel,
+  buildSubagentSummary,
   extractSubagentName,
   extractSubagentDesc,
   resolveAgentColor
@@ -147,6 +148,9 @@ class ClaudeSessionStore {
 
   private _unsubEvent: (() => void) | null = null
   private _unsubDone: (() => void) | null = null
+  private _unsubSubagentActivity: (() => void) | null = null
+  /** Whether the subagent file watcher is currently active */
+  private _subagentWatchActive = false
 
   /** Start listening for Claude session events. Call once on mount. */
   listen() {
@@ -156,12 +160,17 @@ class ClaudeSessionStore {
     this._unsubDone = window.zeus.claudeSession.onDone(({ id, exitCode, sessionId }) => {
       this._handleDone(id, exitCode, sessionId)
     })
+    this._unsubSubagentActivity = window.zeus.claudeSession.onSubagentActivity((payload) => {
+      this._handleSubagentActivity(payload)
+    })
   }
 
   /** Stop listening. */
   unlisten() {
     this._unsubEvent?.()
     this._unsubDone?.()
+    this._unsubSubagentActivity?.()
+    this._stopSubagentWatch()
   }
 
   /** Load saved sessions for a workspace */
@@ -527,6 +536,36 @@ class ClaudeSessionStore {
   /** Track pending aux tool (TaskOutput etc.) to resolve task_id from streaming input */
   private _pendingAuxTool: { blockIndex: number; toolName: string; partialJson: string } | null = null
 
+  /** Last informative status per conversation — prevents long "Processing…" stalls */
+  private _lastMeaningfulStatus = new Map<string, string>()
+
+  /**
+   * Get the best available status for a conversation.
+   * Falls back through: subagent summary → last meaningful status → generic.
+   */
+  private _bestStatus(conv: ClaudeConversation): string {
+    // If subagents are running, build a summary from their activity
+    if (conv.activeSubagents.length > 0) {
+      const summary = buildSubagentSummary(conv.activeSubagents)
+      if (summary) return summary
+    }
+    // Fall back to the last meaningful status we captured
+    return this._lastMeaningfulStatus.get(conv.id) || 'Working…'
+  }
+
+  /**
+   * Set streamingStatus — also remembers it if it's informative,
+   * so we can avoid long "Processing…" stretches.
+   */
+  private _setStatus(conv: ClaudeConversation, status: string): void {
+    conv.streamingStatus = status
+    // Remember informative statuses (not vague ones)
+    const vague = new Set(['Processing…', 'Working…', ''])
+    if (!vague.has(status)) {
+      this._lastMeaningfulStatus.set(conv.id, status)
+    }
+  }
+
   /** Throttled reactivity trigger — batch rapid streaming events into one update per frame */
   private _reactivityPending = false
   private _triggerReactivity() {
@@ -594,12 +633,30 @@ class ClaudeSessionStore {
       }
 
       // Detect ALL subagent (Task) tool_use blocks — supports parallel agents
+      // Use both ID and blockIndex to deduplicate (content_block_start uses cb.id,
+      // snapshot uses sa-{index} — same subagent must not be added twice)
+      const knownBlockIndices = new Set(conv.activeSubagents.map((s) => s.blockIndex))
       const knownIds = new Set(conv.activeSubagents.map((s) => s.id))
       for (let i = 0; i < blocks.length; i++) {
         const b = blocks[i]
         if (b.type === 'tool_use' && b.name && isSubagentTool(b.name) && b.input) {
           const blockId = `sa-${i}`
-          if (!knownIds.has(blockId)) {
+          // Skip if already tracked (by either ID or block index)
+          if (knownIds.has(blockId) || knownBlockIndices.has(i)) {
+            // Already known subagent — update name/description if better data now available
+            const existing = conv.activeSubagents.find((s) => s.id === blockId || s.blockIndex === i)
+            if (existing && b.input && Object.keys(b.input).length > 0) {
+              const betterName = extractSubagentName(b.name, b.input)
+              if (betterName && (existing.name === b.name || existing.name === 'task' || existing.name === 'delegate_task')) {
+                existing.name = betterName
+                existing.color = getAgentColor(betterName)
+              }
+              const betterDesc = extractSubagentDesc(b.input)
+              if (betterDesc && (existing.description === 'Preparing…' || !existing.description)) {
+                existing.description = betterDesc
+              }
+            }
+          } else {
             // New subagent — snapshot has full input data, so name extraction is reliable here
             const agentName = extractSubagentName(b.name, b.input)
             conv.activeSubagents = [...conv.activeSubagents, {
@@ -613,30 +670,14 @@ class ClaudeSessionStore {
               startedAt: Date.now(),
               finished: false
             }]
-          } else {
-            // Already known subagent — update name/description if better data now available
-            const existing = conv.activeSubagents.find((s) => s.id === blockId)
-            if (existing && b.input && Object.keys(b.input).length > 0) {
-              const betterName = extractSubagentName(b.name, b.input)
-              if (betterName && (existing.name === b.name || existing.name === 'task' || existing.name === 'delegate_task')) {
-                existing.name = betterName
-                existing.color = getAgentColor(betterName)
-              }
-              const betterDesc = extractSubagentDesc(b.input)
-              if (betterDesc && (existing.description === 'Preparing…' || !existing.description)) {
-                existing.description = betterDesc
-              }
-            }
           }
           // Try to capture task_id from the immediately following tool_result
-          if (i + 1 < blocks.length && blocks[i + 1].type === 'tool_result') {
-            const existing = conv.activeSubagents.find((s) => s.id === blockId)
-            if (existing && !existing.taskId) {
-              const resultContent = blocks[i + 1].content ?? ''
-              const tidMatch = resultContent.match(/task[_-]?id["\s:]+["']?([a-f0-9]{6,12})/i)
-              if (tidMatch) {
-                existing.taskId = tidMatch[1]
-              }
+          const existing = conv.activeSubagents.find((s) => s.id === blockId || s.blockIndex === i)
+          if (existing && !existing.taskId && i + 1 < blocks.length && blocks[i + 1].type === 'tool_result') {
+            const resultContent = blocks[i + 1].content ?? ''
+            const tidMatch = resultContent.match(/task[_-]?id["\s:]+["']?([a-f0-9]{6,12})/i)
+            if (tidMatch) {
+              existing.taskId = tidMatch[1]
             }
           }
         }
@@ -658,6 +699,7 @@ class ClaudeSessionStore {
         }
         if (taskResultCount >= conv.activeSubagents.length) {
           conv.activeSubagents = []
+          this._stopSubagentWatch()
         }
       }
 
@@ -673,8 +715,12 @@ class ClaudeSessionStore {
         if (isSubagentTool(cb.name)) {
           // New subagent starting — add to array (don't overwrite)
           // Note: input is usually {} here; real data arrives via input_json_delta
+          // Deduplicate by both ID and blockIndex (snapshot path uses sa-{index} IDs)
           const agentName = extractSubagentName(cb.name, input)
-          if (!conv.activeSubagents.some((s) => s.id === blockId)) {
+          const alreadyExists = conv.activeSubagents.some(
+            (s) => s.id === blockId || s.blockIndex === blockIndex
+          )
+          if (!alreadyExists) {
             conv.activeSubagents = [...conv.activeSubagents, {
               id: blockId,
               blockIndex,
@@ -689,10 +735,10 @@ class ClaudeSessionStore {
             // Register for input_json_delta tracking
             this._pendingSubagentInput.set(blockIndex, { convId: id, subagentId: blockId, partialJson: '' })
           }
-          conv.streamingStatus = this._formatToolStatus(cb.name, input)
+          this._setStatus(conv, this._formatToolStatus(cb.name, input))
         } else if (isSubagentAuxTool(cb.name)) {
           // TaskOutput / background_output / background_cancel — show as subagent status
-          conv.streamingStatus = subagentAuxLabel(cb.name, input, conv.activeSubagents)
+          this._setStatus(conv, subagentAuxLabel(cb.name, input, conv.activeSubagents))
           // Track aux tool input_json_delta so we can resolve task_id once it arrives
           this._pendingAuxTool = { blockIndex, toolName: cb.name, partialJson: '' }
           // Keep any existing active subagents alive during this wait
@@ -706,18 +752,18 @@ class ClaudeSessionStore {
               target.toolsUsed = [...target.toolsUsed, cb.name]
             }
           }
-          conv.streamingStatus = this._formatToolStatus(cb.name, input)
+          this._setStatus(conv, this._formatToolStatus(cb.name, input))
         } else {
-          conv.streamingStatus = this._formatToolStatus(cb.name, input)
+          this._setStatus(conv, this._formatToolStatus(cb.name, input))
         }
       } else if (cb?.type === 'thinking') {
         const target = this._lastRunningAgent(conv)
         if (target) { target.nestedStatus = 'Thinking…'; target.nestedToolName = undefined }
-        conv.streamingStatus = 'Thinking…'
+        this._setStatus(conv, 'Thinking…')
       } else if (cb?.type === 'text') {
         const target = this._lastRunningAgent(conv)
         if (target) { target.nestedStatus = 'Writing…'; target.nestedToolName = undefined }
-        conv.streamingStatus = 'Writing…'
+        this._setStatus(conv, 'Writing…')
       }
 
     } else if (event.type === 'content_block_delta') {
@@ -731,9 +777,9 @@ class ClaudeSessionStore {
         if (conv.streamingContent.length > MAX_STREAMING_CONTENT) {
           conv.streamingContent = conv.streamingContent.slice(-MAX_STREAMING_CONTENT)
         }
-        conv.streamingStatus = 'Writing…'
+        this._setStatus(conv, 'Writing…')
       } else if (delta?.type === 'thinking_delta') {
-        conv.streamingStatus = 'Thinking…'
+        this._setStatus(conv, 'Thinking…')
       } else if (delta?.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
         // Tool input being streamed — accumulate for pending subagent blocks
         const pending = this._pendingSubagentInput.get(deltaIndex)
@@ -748,7 +794,7 @@ class ClaudeSessionStore {
           // Try parsing to extract task_id and update status label
           try {
             const auxInput = JSON.parse(this._pendingAuxTool.partialJson) as Record<string, unknown>
-            conv.streamingStatus = subagentAuxLabel(this._pendingAuxTool.toolName, auxInput, conv.activeSubagents)
+            this._setStatus(conv, subagentAuxLabel(this._pendingAuxTool.toolName, auxInput, conv.activeSubagents))
             // Also try to link task_id to a subagent that doesn't have one yet
             if (typeof auxInput.task_id === 'string' && conv.activeSubagents.length > 0) {
               const tid = auxInput.task_id
@@ -764,11 +810,14 @@ class ClaudeSessionStore {
             const tidMatch = this._pendingAuxTool.partialJson.match(/"task_id"\s*:\s*"([a-f0-9]+)"/i)
             if (tidMatch) {
               const partialInput = { task_id: tidMatch[1], block: this._pendingAuxTool.partialJson.includes('"block":true') || this._pendingAuxTool.partialJson.includes('"block": true') }
-              conv.streamingStatus = subagentAuxLabel(this._pendingAuxTool.toolName, partialInput as unknown as Record<string, unknown>, conv.activeSubagents)
+              this._setStatus(conv, subagentAuxLabel(this._pendingAuxTool.toolName, partialInput as unknown as Record<string, unknown>, conv.activeSubagents))
             }
           }
         }
-        conv.streamingStatus = conv.streamingStatus || 'Processing…'
+        // Avoid vague "Processing…" — show subagent activity or last known status
+        if (!conv.streamingStatus) {
+          conv.streamingStatus = this._bestStatus(conv)
+        }
       }
 
     } else if (event.type === 'content_block_stop') {
@@ -791,14 +840,15 @@ class ClaudeSessionStore {
           }
         } catch { /* partial json, already handled incrementally */ }
         this._pendingSubagentInput.delete(stopIndex)
+        // Start watching child JSONL files now that the subagent is executing
+        this._maybeStartSubagentWatch(conv)
       }
       // Clear aux tool tracking when its block finishes
       if (this._pendingAuxTool && this._pendingAuxTool.blockIndex === stopIndex) {
         this._pendingAuxTool = null
       }
-      // Block finished — status will be updated by next block or result
-      const lastAgent = this._lastRunningAgent(conv)
-      conv.streamingStatus = lastAgent ? (lastAgent.nestedStatus || 'Processing…') : 'Processing…'
+      // Block finished — show best available status instead of vague "Processing…"
+      conv.streamingStatus = this._bestStatus(conv)
 
     } else if (event.type === 'result') {
       // Final result — use result text if available
@@ -821,6 +871,7 @@ class ClaudeSessionStore {
       conv.activeSubagents = []
       this._pendingSubagentInput.clear()
       this._pendingAuxTool = null
+      this._stopSubagentWatch()
 
     } else if (event.type === 'system') {
       conv.streamingStatus = 'Initializing…'
@@ -864,9 +915,87 @@ class ClaudeSessionStore {
     this._triggerReactivity()
   }
 
+  // ── Subagent JSONL File Watcher ──────────────────────────────────────────────
+
+  /** Start the JSONL file watcher if subagents are active and we have a session ID */
+  private _maybeStartSubagentWatch(conv: ClaudeConversation): void {
+    const activeAgents = conv.activeSubagents.filter(s => !s.finished)
+    if (activeAgents.length === 0 || !conv.claudeSessionId || !conv.workspacePath) return
+    // Already watching — just update targets
+    if (this._subagentWatchActive) {
+      window.zeus.claudeSession.updateSubagentTargets(
+        activeAgents.map(s => ({ taskId: s.taskId, name: s.name, description: s.description }))
+      )
+      return
+    }
+    this._subagentWatchActive = true
+    window.zeus.claudeSession.watchSubagents(
+      conv.id,
+      conv.claudeSessionId,
+      conv.workspacePath,
+      activeAgents.map(s => ({ taskId: s.taskId, name: s.name, description: s.description }))
+    )
+  }
+
+  /** Stop the JSONL file watcher */
+  private _stopSubagentWatch(): void {
+    if (this._subagentWatchActive) {
+      this._subagentWatchActive = false
+      window.zeus.claudeSession.stopSubagentWatch()
+    }
+  }
+
+  /** Handle activity updates from the subagent JSONL watcher */
+  private _handleSubagentActivity(payload: SubagentActivityPayload): void {
+    const conv = this._findConv(payload.conversationId)
+    if (!conv || conv.activeSubagents.length === 0) return
+
+    let updated = false
+    for (const act of payload.activities) {
+      // Try to match by name, then by taskId
+      let target: SubagentInfo | undefined
+      if (act.matchedName) {
+        target = conv.activeSubagents.find(s => !s.finished && s.name === act.matchedName)
+      }
+      if (!target && act.matchedTaskId) {
+        target = conv.activeSubagents.find(s => !s.finished && s.taskId === act.matchedTaskId)
+      }
+      // Fallback: if there's only one active subagent, it's probably that one
+      if (!target) {
+        const active = conv.activeSubagents.filter(s => !s.finished)
+        if (active.length === 1) target = active[0]
+      }
+
+      if (target && act.latestStatus) {
+        // Only update if we have something more informative than "Executing…"
+        if (target.nestedStatus === 'Executing…' || target.nestedStatus === 'Starting…' ||
+            target.nestedStatus === 'Working…' || act.latestStatus !== target.nestedStatus) {
+          target.nestedStatus = act.latestStatus
+          target.nestedToolName = act.latestTool
+          if (act.latestTool && !target.toolsUsed.includes(act.latestTool)) {
+            target.toolsUsed = [...target.toolsUsed, act.latestTool]
+          }
+          updated = true
+        }
+      }
+    }
+
+    if (updated) {
+      // Update streamingStatus with best available info from all subagents
+      const summary = buildSubagentSummary(conv.activeSubagents)
+      if (summary) {
+        this._setStatus(conv, summary)
+      }
+      this._triggerReactivity()
+    }
+  }
+
   private _handleDone(id: string, exitCode: number, sessionId?: string) {
     const conv = this._findConv(id)
     if (!conv) return
+
+    // Stop subagent watcher when session ends
+    this._stopSubagentWatch()
 
     if (sessionId) {
       conv.claudeSessionId = sessionId
@@ -898,6 +1027,7 @@ class ClaudeSessionStore {
     conv.streamingBlocks = []
     conv.streamingStatus = ''
     conv.pendingPrompt = null
+    this._lastMeaningfulStatus.delete(conv.id)
 
     // Detect model-level questions with numbered choices for quick-reply UI
     conv.quickReplies = detectQuickReplies(conv.messages)

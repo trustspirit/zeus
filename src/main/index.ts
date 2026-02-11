@@ -57,6 +57,12 @@ import {
   getGitChangedFiles,
   readClaudeTranscript
 } from './files.js'
+import {
+  initSubagentWatcher,
+  startSubagentWatch,
+  updateSubagentTargets,
+  stopSubagentWatch
+} from './subagent-watcher.js'
 
 // ── State ──────────────────────────────────────────────────────────────────────
 
@@ -444,6 +450,29 @@ function registerIPC(): void {
       } catch { /* ignore */ }
     }
     deleteSession(conversationId)
+    stopSubagentWatch()
+    return true
+  })
+
+  // ── Subagent JSONL Watcher ──
+  ipcMain.handle(
+    'claude-session:watch-subagents',
+    (_, conversationId: string, parentSessionId: string, workspacePath: string,
+      targets: { taskId?: string; name: string; description: string }[]) => {
+      return startSubagentWatch(conversationId, parentSessionId, workspacePath, targets)
+    }
+  )
+
+  ipcMain.handle(
+    'claude-session:update-subagent-targets',
+    (_, targets: { taskId?: string; name: string; description: string }[]) => {
+      updateSubagentTargets(targets)
+      return true
+    }
+  )
+
+  ipcMain.handle('claude-session:stop-subagent-watch', () => {
+    stopSubagentWatch()
     return true
   })
 }
@@ -453,6 +482,7 @@ function registerIPC(): void {
 function shutdownAll(): void {
   killAllTerminals()
   killAllClaudeSessions()
+  stopSubagentWatch()
 }
 
 app.whenReady().then(() => {
@@ -460,6 +490,7 @@ app.whenReady().then(() => {
   initStore()
   initTerminal(pty, () => mainWindow)
   initClaudeSession(() => mainWindow)
+  initSubagentWatcher(() => mainWindow)
   registerIPC()
   createWindow()
 

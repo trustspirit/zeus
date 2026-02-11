@@ -17,40 +17,79 @@
   // ── Command history (derived from conversation messages) ──
   let historyIndex = $state(-1) // -1 = not browsing; 0 = most recent
   let savedDraft = $state('')   // saves current input when entering history mode
+  let savedTagDraft = $state<CommandTag | null>(null) // saves current tag when entering history
   let historyMenuOpen = $state(false)
+
+  /** A history entry preserves skill/command metadata so it can be restored as a tag */
+  interface HistoryEntry {
+    display: string     // what to show in the history list and input
+    tag?: CommandTag    // skill/command tag to restore (if this was a skill invocation)
+    args?: string       // arguments portion (inputValue when tag is restored)
+  }
 
   // Derive history from actual user messages in the active conversation (newest first)
   // - If displayContent exists (set by Zeus when a skill was used), show that
   // - If content is short enough to be actual typed input, show it
   // - Skip long messages without displayContent (likely resolved skill .md bodies from transcript)
   const MAX_TYPED_LENGTH = 500
-  const inputHistory = $derived.by(() => {
+  const inputHistory = $derived.by((): HistoryEntry[] => {
     const conv = claudeSessionStore.activeConversation
     if (!conv) return []
-    const items: string[] = []
+    const entries: HistoryEntry[] = []
     for (let i = conv.messages.length - 1; i >= 0; i--) {
       const m = conv.messages[i]
       if (m.role !== 'user') continue
       if (m.displayContent) {
-        // Explicitly labelled (skill invocation via Zeus) — always include
         const text = m.displayContent.trim()
-        if (text) items.push(text)
+        if (!text) continue
+        // Try to match the display text to a known slash command
+        // displayContent is typically "/command args" or just "/command"
+        const entry = resolveHistoryEntry(text)
+        entries.push(entry)
       } else {
-        // Raw content — only include if it looks like actual typed input
         const text = m.content.trim()
         if (text && text.length <= MAX_TYPED_LENGTH) {
-          items.push(text)
+          entries.push({ display: text })
         }
       }
     }
-    return items
+    return entries
   })
+
+  /** Resolve a history display text (e.g. "/fe-dev build the form") into a HistoryEntry with tag metadata */
+  function resolveHistoryEntry(display: string): HistoryEntry {
+    if (!display.startsWith('/')) return { display }
+
+    // Split "/command args..." into command and args
+    const spaceIdx = display.indexOf(' ')
+    const cmd = spaceIdx > 0 ? display.slice(0, spaceIdx) : display
+    const args = spaceIdx > 0 ? display.slice(spaceIdx + 1).trim() : ''
+
+    // Look up in available slash items
+    const match = allSlashItems.find((i) => i.command === cmd)
+    if (match) {
+      return {
+        display,
+        tag: { command: match.command, label: match.label, kind: match.kind, filePath: match.filePath },
+        args
+      }
+    }
+
+    // Unknown slash command — still treat as a tag
+    const parts = cmd.slice(1).split(':')
+    return {
+      display,
+      tag: { command: cmd, label: parts[parts.length - 1] || cmd, kind: 'command' },
+      args
+    }
+  }
 
   // Reset history index when conversation changes
   $effect(() => {
     void claudeSessionStore.activeConversation?.id
     historyIndex = -1
     savedDraft = ''
+    savedTagDraft = null
   })
 
   function resizeTextarea() {
@@ -62,36 +101,51 @@
     })
   }
 
+  /** Apply a history entry: restore tag + args, or just set input text */
+  function applyHistoryEntry(entry: HistoryEntry) {
+    if (entry.tag) {
+      commandTag = { ...entry.tag }
+      inputValue = entry.args || ''
+    } else {
+      commandTag = null
+      inputValue = entry.display
+    }
+  }
+
   function navigateHistory(direction: 'up' | 'down') {
     if (inputHistory.length === 0) return
 
     if (direction === 'up') {
       if (historyIndex === -1) {
         savedDraft = inputValue
+        savedTagDraft = commandTag ? { ...commandTag } : null
         historyIndex = 0
       } else if (historyIndex < inputHistory.length - 1) {
         historyIndex++
       } else {
         return
       }
-      inputValue = inputHistory[historyIndex]
+      applyHistoryEntry(inputHistory[historyIndex])
     } else {
       if (historyIndex <= 0) {
         historyIndex = -1
         inputValue = savedDraft
+        commandTag = savedTagDraft
         savedDraft = ''
+        savedTagDraft = null
       } else {
         historyIndex--
-        inputValue = inputHistory[historyIndex]
+        applyHistoryEntry(inputHistory[historyIndex])
       }
     }
     resizeTextarea()
   }
 
   function selectHistoryItem(idx: number) {
-    inputValue = inputHistory[idx]
+    applyHistoryEntry(inputHistory[idx])
     historyIndex = -1
     savedDraft = ''
+    savedTagDraft = null
     historyMenuOpen = false
     requestAnimationFrame(() => {
       inputEl?.focus()
@@ -630,6 +684,7 @@
     // Reset history browsing state
     historyIndex = -1
     savedDraft = ''
+    savedTagDraft = null
 
     // Handle built-in commands locally
     if (commandTag?.kind === 'builtin') {
@@ -698,8 +753,9 @@
     if (handleSlashKeydown(e)) return
 
     // Arrow Up/Down for command history when input is empty or single-line
-    if (e.key === 'ArrowUp' && !e.shiftKey && !commandTag) {
+    if (e.key === 'ArrowUp' && !e.shiftKey) {
       // Only navigate history if cursor is at position 0 or input is empty
+      // Allow when commandTag is set if we're already browsing history (historyIndex >= 0)
       const cursorAtStart = inputEl && inputEl.selectionStart === 0 && inputEl.selectionEnd === 0
       if (inputValue === '' || cursorAtStart) {
         e.preventDefault()
@@ -707,11 +763,16 @@
         return
       }
     }
-    if (e.key === 'ArrowDown' && !e.shiftKey && !commandTag) {
+    if (e.key === 'ArrowDown' && !e.shiftKey) {
       // Only navigate history if browsing history
       if (historyIndex >= 0) {
         const cursorAtEnd = inputEl && inputEl.selectionStart === inputValue.length
-        if (cursorAtEnd || inputValue === inputHistory[historyIndex]) {
+        const entry = inputHistory[historyIndex]
+        // Check if current input matches the history entry (text or args)
+        const matchesCurrent = entry?.tag
+          ? inputValue === (entry.args || '')
+          : inputValue === entry?.display
+        if (cursorAtEnd || matchesCurrent) {
           e.preventDefault()
           navigateHistory('down')
           return
@@ -755,6 +816,33 @@
     inputEl.style.height = 'auto'
     inputEl.style.height = Math.min(inputEl.scrollHeight, 150) + 'px'
     checkSlashTrigger()
+  }
+
+  /** Intercept paste: if pasted text starts with /skillname, convert to tag */
+  function handlePaste(e: ClipboardEvent) {
+    // Only auto-convert if there's no existing tag and input is empty
+    if (commandTag || inputValue.trim()) return
+
+    const pasted = e.clipboardData?.getData('text/plain')?.trim()
+    if (!pasted || !pasted.startsWith('/')) return
+
+    // Extract the command part (first word) and any remaining args
+    const spaceIdx = pasted.indexOf(' ')
+    const cmd = spaceIdx > 0 ? pasted.slice(0, spaceIdx) : pasted
+    const args = spaceIdx > 0 ? pasted.slice(spaceIdx + 1).trim() : ''
+
+    // Try to match against known slash items
+    const match = allSlashItems.find((i) => i.command === cmd)
+    if (match) {
+      e.preventDefault()
+      commandTag = { command: match.command, label: match.label, kind: match.kind, filePath: match.filePath }
+      inputValue = args
+      requestAnimationFrame(() => {
+        resizeTextarea()
+        inputEl?.focus()
+      })
+    }
+    // If no match, let the default paste behavior happen
   }
 
   function resetHeight() {
@@ -817,14 +905,21 @@
         <span class="history-count">{inputHistory.length}</span>
       </div>
       <div class="history-list">
-        {#each inputHistory as item, idx (idx)}
+        {#each inputHistory as entry, idx (idx)}
           <button
             class="history-item"
             class:active={idx === historyIndex}
             onclick={() => selectHistoryItem(idx)}
           >
             <span class="history-idx">{idx + 1}</span>
-            <span class="history-text">{item}</span>
+            {#if entry.tag}
+              <span class="history-tag {kindClass(entry.tag.kind)}">{entry.tag.command}</span>
+              {#if entry.args}
+                <span class="history-text">{entry.args}</span>
+              {/if}
+            {:else}
+              <span class="history-text">{entry.display}</span>
+            {/if}
           </button>
         {/each}
       </div>
@@ -909,6 +1004,7 @@
       rows="1"
       oninput={handleInput}
       onkeydown={handleKeydown}
+      onpaste={handlePaste}
       spellcheck="false"
       autocomplete="off"
     ></textarea>
@@ -1358,6 +1454,31 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     word-break: break-word;
+  }
+  .history-tag {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 1px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+    margin-right: 4px;
+  }
+  .history-tag.kind-command {
+    background: var(--accent-bg);
+    color: var(--accent);
+  }
+  .history-tag.kind-skill {
+    background: rgba(122, 190, 117, 0.12);
+    color: var(--green-soft);
+  }
+  .history-tag.kind-agent {
+    background: rgba(210, 150, 100, 0.12);
+    color: var(--orange-warm);
+  }
+  .history-tag.kind-builtin {
+    background: rgba(160, 160, 180, 0.1);
+    color: var(--text-dim);
   }
   .history-btn.active {
     border-color: var(--text-muted);

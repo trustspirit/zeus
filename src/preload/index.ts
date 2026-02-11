@@ -222,6 +222,22 @@ contextBridge.exposeInMainWorld('zeus', {
         callback(payload)
       ipcRenderer.on('claude-session:done', handler)
       return () => ipcRenderer.removeListener('claude-session:done', handler)
+    },
+    watchSubagents: (conversationId: string, parentSessionId: string, workspacePath: string,
+      targets: { taskId?: string; name: string; description: string }[]) =>
+      ipcRenderer.invoke('claude-session:watch-subagents', conversationId, parentSessionId, workspacePath, targets),
+    updateSubagentTargets: (targets: { taskId?: string; name: string; description: string }[]) =>
+      ipcRenderer.invoke('claude-session:update-subagent-targets', targets),
+    stopSubagentWatch: () =>
+      ipcRenderer.invoke('claude-session:stop-subagent-watch'),
+    onSubagentActivity: (callback: (payload: {
+      conversationId: string;
+      activities: { matchedName?: string; matchedTaskId?: string; childSessionId: string; latestTool?: string; latestStatus: string }[]
+    }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, payload: Parameters<typeof callback>[0]) =>
+        callback(payload)
+      ipcRenderer.on('claude-session:subagent-activity', handler)
+      return () => ipcRenderer.removeListener('claude-session:subagent-activity', handler)
     }
   },
 

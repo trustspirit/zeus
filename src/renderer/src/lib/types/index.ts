@@ -169,6 +169,18 @@ export interface QuickReply {
   value: string   // what gets sent (e.g. "1")
 }
 
+/** Activity payload from subagent JSONL watcher */
+export interface SubagentActivityPayload {
+  conversationId: string
+  activities: {
+    matchedName?: string
+    matchedTaskId?: string
+    childSessionId: string
+    latestTool?: string
+    latestStatus: string
+  }[]
+}
+
 /** Active subagent (Task tool) info */
 export interface SubagentInfo {
   id: string                // unique id (tool_use block id or generated)
@@ -292,6 +304,12 @@ export interface ZeusAPI {
     deleteSaved(sessionId: string): Promise<boolean>
     onEvent(callback: (payload: { id: string; event: ClaudeStreamEvent }) => void): () => void
     onDone(callback: (payload: { id: string; exitCode: number; sessionId?: string }) => void): () => void
+    /** Start watching child JSONL files for subagent internal activity */
+    watchSubagents(conversationId: string, parentSessionId: string, workspacePath: string,
+      targets: { taskId?: string; name: string; description: string }[]): Promise<boolean>
+    updateSubagentTargets(targets: { taskId?: string; name: string; description: string }[]): Promise<boolean>
+    stopSubagentWatch(): Promise<boolean>
+    onSubagentActivity(callback: (payload: SubagentActivityPayload) => void): () => void
   }
   ide: {
     list(): Promise<IDE[]>
