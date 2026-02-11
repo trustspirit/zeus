@@ -11,7 +11,7 @@
       const raw = marked.parse(tab.content, { async: false }) as string
       return DOMPurify.sanitize(raw, { ADD_TAGS: ['details', 'summary'] })
     } catch {
-      return '<p style="color:#e06c75;">Failed to parse markdown</p>'
+      return '<p style="color:var(--red);">Failed to parse markdown</p>'
     }
   })
 
@@ -58,35 +58,35 @@
   .doc-viewer {
     flex: 1; width: 100%; height: 100%;
     display: flex; flex-direction: column;
-    background: #282c34; overflow: hidden;
+    background: var(--bg-base); overflow: hidden;
   }
 
   .doc-header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 20px; border-bottom: 1px solid #181a1f;
-    flex-shrink: 0; background: #21252b;
+    padding: 10px 20px; border-bottom: 1px solid var(--border-subtle);
+    flex-shrink: 0; background: var(--bg-surface);
   }
 
   .doc-breadcrumb {
     display: flex; align-items: center; gap: 8px; min-width: 0;
   }
-  .doc-icon { color: #61afef; flex-shrink: 0; }
+  .doc-icon { color: var(--blue); flex-shrink: 0; }
   .breadcrumb-path {
-    font-size: 12px; color: #7f848e;
+    font-size: 12px; color: var(--text-secondary);
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .breadcrumb-size {
-    font-size: 11px; color: #5c6370; flex-shrink: 0;
+    font-size: 11px; color: var(--text-muted); flex-shrink: 0;
   }
 
   .reload-btn {
     width: 28px; height: 28px; border: none; border-radius: 6px;
-    background: transparent; color: #5c6370; cursor: pointer;
+    background: transparent; color: var(--text-muted); cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     transition: all 120ms ease; flex-shrink: 0;
   }
-  .reload-btn:hover { background: #2c313a; color: #abb2bf; }
+  .reload-btn:hover { background: var(--bg-raised); color: var(--text-primary); }
 
   /* Scrollable body with comfortable max-width */
   .doc-body {
@@ -98,45 +98,45 @@
 
   .markdown-content {
     max-width: 820px; width: 100%;
-    font-size: 15px; line-height: 1.75; color: #abb2bf;
+    font-size: 15px; line-height: 1.75; color: var(--text-primary);
     font-family: 'Pretendard Variable', Pretendard, -apple-system, sans-serif;
     overflow-wrap: break-word; word-break: break-word;
   }
 
   /* ── Markdown styles ─────────────────────────────────────────── */
   .markdown-content :global(h1) {
-    font-size: 28px; font-weight: 700; color: #e5c07b;
-    margin: 32px 0 16px; padding-bottom: 10px; border-bottom: 1px solid #3e4451;
+    font-size: 28px; font-weight: 700; color: var(--yellow);
+    margin: 32px 0 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
   }
   .markdown-content :global(h2) {
-    font-size: 22px; font-weight: 600; color: #e5c07b; margin: 28px 0 12px;
-    padding-bottom: 8px; border-bottom: 1px solid #3e4451;
+    font-size: 22px; font-weight: 600; color: var(--yellow); margin: 28px 0 12px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
   }
-  .markdown-content :global(h3) { font-size: 18px; font-weight: 600; color: #e5c07b; margin: 24px 0 8px; }
-  .markdown-content :global(h4) { font-size: 15px; font-weight: 600; color: #d19a66; margin: 20px 0 6px; }
+  .markdown-content :global(h3) { font-size: 18px; font-weight: 600; color: var(--yellow); margin: 24px 0 8px; }
+  .markdown-content :global(h4) { font-size: 15px; font-weight: 600; color: var(--orange); margin: 20px 0 6px; }
   .markdown-content :global(p) { margin: 0 0 16px; }
-  .markdown-content :global(a) { color: #61afef; text-decoration: none; }
+  .markdown-content :global(a) { color: var(--blue); text-decoration: none; }
   .markdown-content :global(a:hover) { text-decoration: underline; }
-  .markdown-content :global(strong) { font-weight: 600; color: #d19a66; }
+  .markdown-content :global(strong) { font-weight: 600; color: var(--orange); }
   .markdown-content :global(em) { font-style: italic; }
   .markdown-content :global(code) {
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
-    background: #21252b; color: #e06c75; padding: 2px 6px; border-radius: 4px;
-    border: 1px solid #3e4451;
+    background: var(--bg-surface); color: var(--red); padding: 2px 6px; border-radius: 4px;
+    border: 1px solid var(--border);
     font-size: 0.88em;
   }
   .markdown-content :global(pre) {
-    background: #1e2127; border: 1px solid #3e4451; border-radius: 10px;
+    background: var(--bg-deep); border: 1px solid var(--border); border-radius: 10px;
     padding: 16px 20px; margin: 0 0 20px;
     overflow-x: hidden; white-space: pre-wrap; word-break: break-word;
   }
   .markdown-content :global(pre code) {
-    background: none; padding: 0; color: #abb2bf; font-size: 13px; line-height: 1.6;
+    background: none; padding: 0; color: var(--text-primary); font-size: 13px; line-height: 1.6;
     white-space: pre-wrap; word-break: break-word;
   }
   .markdown-content :global(blockquote) {
-    border-left: 3px solid #4b5263; padding: 8px 20px; margin: 0 0 16px;
-    color: #7f848e; background: rgba(75, 82, 99, 0.1); border-radius: 0 6px 6px 0;
+    border-left: 3px solid var(--border-strong); padding: 8px 20px; margin: 0 0 16px;
+    color: var(--text-secondary); background: rgba(75, 82, 99, 0.1); border-radius: 0 6px 6px 0;
   }
   .markdown-content :global(ul), .markdown-content :global(ol) {
     padding-left: 28px; margin: 0 0 16px;
@@ -147,15 +147,15 @@
     table-layout: fixed; word-break: break-word;
   }
   .markdown-content :global(th) {
-    text-align: left; padding: 10px 14px; border-bottom: 2px solid #3e4451;
-    color: #abb2bf; font-weight: 600;
+    text-align: left; padding: 10px 14px; border-bottom: 2px solid var(--border);
+    color: var(--text-primary); font-weight: 600;
   }
   .markdown-content :global(td) {
-    padding: 8px 14px; border-bottom: 1px solid #2c313a;
+    padding: 8px 14px; border-bottom: 1px solid var(--bg-raised);
   }
   .markdown-content :global(tr:hover td) { background: rgba(255,255,255,0.02); }
   .markdown-content :global(hr) {
-    border: none; border-top: 1px solid #3e4451; margin: 32px 0;
+    border: none; border-top: 1px solid var(--border); margin: 32px 0;
   }
   .markdown-content :global(img) {
     max-width: 100%; border-radius: 8px; margin: 12px 0;

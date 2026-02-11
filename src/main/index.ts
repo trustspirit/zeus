@@ -68,10 +68,19 @@ function createWindow(): void {
   const store = getStore()
   const bounds = store.windowBounds
 
+  const resourceBase = app.isPackaged ? process.resourcesPath : path.join(__dirname, '../../resources')
   const iconPath = path.join(
-    app.isPackaged ? process.resourcesPath : path.join(__dirname, '../../resources'),
+    resourceBase,
     process.platform === 'win32' ? 'icon.ico' : 'icon.png'
   )
+
+  // Set macOS Dock icon (BrowserWindow icon option is ignored on macOS)
+  if (process.platform === 'darwin' && app.dock) {
+    const dockIcon = path.join(resourceBase, 'icon.png')
+    if (fs.existsSync(dockIcon)) {
+      app.dock.setIcon(dockIcon)
+    }
+  }
 
   mainWindow = new BrowserWindow({
     width: bounds?.width ?? 1400,
@@ -85,7 +94,7 @@ function createWindow(): void {
     trafficLightPosition: { x: 16, y: 18 },
     vibrancy: 'under-window',
     visualEffectState: 'active',
-    ...(process.platform !== 'darwin' && fs.existsSync(iconPath) ? { icon: iconPath } : {}),
+    ...(fs.existsSync(iconPath) ? { icon: iconPath } : {}),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       nodeIntegration: false,

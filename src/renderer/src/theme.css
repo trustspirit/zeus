@@ -2,9 +2,12 @@
  * Zeus Theme — CSS Custom Properties
  * ────────────────────────────────────
  * Single source of truth for all colors.
- * To create a new theme, override these variables.
+ * Default: Claude Code (dark terminal). Switch via [data-theme] on <html>.
  */
 
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Shared tokens (never change across themes)
+ * ══════════════════════════════════════════════════════════════════════════════ */
 :root {
   /* ── Brand / Accent (Claude terracotta) ── */
   --accent:           #D97757;
@@ -16,29 +19,6 @@
   --accent-border:    rgba(217, 119, 87, 0.25);
   --accent-border-strong: rgba(217, 119, 87, 0.45);
   --accent-glow:      rgba(217, 119, 87, 0.10);
-
-  /* ── Backgrounds ── */
-  --bg-base:       #282c34;
-  --bg-raised:     #2c313a;
-  --bg-surface:    #21252b;
-  --bg-deep:       #1e2127;
-  --bg-overlay:    #23272e;
-  --bg-hover:      #31363f;
-  --bg-inset:      #2c2d31;
-
-  /* ── Borders ── */
-  --border:        #3e4451;
-  --border-subtle: #2e333b;
-  --border-strong: #4b5263;
-  --border-muted:  #3e4045;
-
-  /* ── Text ── */
-  --text-primary:   #abb2bf;
-  --text-bright:    #d4d8e0;
-  --text-secondary: #7f848e;
-  --text-muted:     #5c6370;
-  --text-hint:      #4b5263;
-  --text-dim:       #8b919d;
 
   /* ── Semantic: Success / Green ── */
   --green:        #98c379;
@@ -78,4 +58,123 @@
   --radius-md:  10px;
   --radius-lg:  12px;
   --radius-xl:  18px;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Theme: Claude Code  (dark terminal — default)
+ * Inspired by claude.com/product/claude-code
+ * ══════════════════════════════════════════════════════════════════════════════ */
+:root,
+[data-theme="claude-code"] {
+  --bg-base:       #282c34;
+  --bg-raised:     #2c313a;
+  --bg-surface:    #21252b;
+  --bg-deep:       #1e2127;
+  --bg-overlay:    #23272e;
+  --bg-hover:      #31363f;
+  --bg-inset:      #2c2d31;
+
+  --border:        #3e4451;
+  --border-subtle: #2e333b;
+  --border-strong: #4b5263;
+  --border-muted:  #3e4045;
+
+  --text-primary:   #abb2bf;
+  --text-bright:    #d4d8e0;
+  --text-secondary: #7f848e;
+  --text-muted:     #5c6370;
+  --text-hint:      #4b5263;
+  --text-dim:       #8b919d;
+
+  color-scheme: dark;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Theme: Anthropic  (warm light)
+ * Inspired by anthropic.com — warm cream/beige editorial look
+ * ══════════════════════════════════════════════════════════════════════════════ */
+[data-theme="anthropic"] {
+  --bg-base:       #FAF7F2;
+  --bg-raised:     #FFFFFF;
+  --bg-surface:    #F0ECE4;
+  --bg-deep:       #E8E3DA;
+  --bg-overlay:    #F5F1EB;
+  --bg-hover:      #EDE8E0;
+  --bg-inset:      #F3EFE8;
+
+  --border:        #D8D2C8;
+  --border-subtle: #E5E0D8;
+  --border-strong: #C5BFB5;
+  --border-muted:  #DDD8CF;
+
+  --text-primary:   #3D3929;
+  --text-bright:    #1A1710;
+  --text-secondary: #6B6558;
+  --text-muted:     #8C867A;
+  --text-hint:      #B0AA9E;
+  --text-dim:       #7A7468;
+
+  --accent:           #C1533C;
+  --accent-hover:     #A8452F;
+  --accent-light:     #D4735E;
+  --accent-bg:        rgba(193, 83, 60, 0.08);
+  --accent-bg-hover:  rgba(193, 83, 60, 0.14);
+  --accent-bg-subtle: rgba(193, 83, 60, 0.04);
+  --accent-border:    rgba(193, 83, 60, 0.20);
+  --accent-border-strong: rgba(193, 83, 60, 0.35);
+  --accent-glow:      rgba(193, 83, 60, 0.08);
+
+  --green:        #3D8B37;
+  --green-bright: #4CA345;
+  --green-soft:   #5AA653;
+  --green-bg:     rgba(61, 139, 55, 0.10);
+
+  --red:          #C53030;
+  --red-hover:    #9B2C2C;
+  --red-bg:       rgba(197, 48, 48, 0.08);
+
+  --yellow:       #B7791F;
+  --yellow-bg:    rgba(183, 121, 31, 0.08);
+
+  --blue:         #2B6CB0;
+  --blue-bright:  #3182CE;
+  --blue-bg:      rgba(43, 108, 176, 0.08);
+  --blue-border:  rgba(43, 108, 176, 0.15);
+
+  --cyan:         #2C7A7B;
+  --orange:       #C05621;
+  --orange-warm:  #B7472A;
+
+  color-scheme: light;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Theme: Claude Dark  (deep, refined dark)
+ * A softer, more refined dark theme with warmer undertones
+ * ══════════════════════════════════════════════════════════════════════════════ */
+[data-theme="claude-dark"] {
+  --bg-base:       #1C1917;
+  --bg-raised:     #231F1D;
+  --bg-surface:    #171412;
+  --bg-deep:       #120F0D;
+  --bg-overlay:    #1E1B18;
+  --bg-hover:      #2A2623;
+  --bg-inset:      #201D1A;
+
+  --border:        #352F2B;
+  --border-subtle: #2A2522;
+  --border-strong: #443D38;
+  --border-muted:  #332E2A;
+
+  --text-primary:   #C8BDB6;
+  --text-bright:    #EDE5DF;
+  --text-secondary: #8A7F78;
+  --text-muted:     #6B6058;
+  --text-hint:      #4A4038;
+  --text-dim:       #9A8F88;
+
+  color-scheme: dark;
 }

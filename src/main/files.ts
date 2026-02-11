@@ -151,7 +151,12 @@ export interface GitChangedFile {
   deletions: number
 }
 
-const GIT_EXEC_OPTS = { encoding: 'utf-8' as const, timeout: 10000, maxBuffer: 5 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] as const }
+const GIT_EXEC_OPTS = {
+  encoding: 'utf-8' as const,
+  timeout: 10000,
+  maxBuffer: 5 * 1024 * 1024,
+  stdio: ['pipe', 'pipe', 'pipe'] as ['pipe', 'pipe', 'pipe']
+}
 
 export function getGitDiff(workspacePath: string): string {
   try {

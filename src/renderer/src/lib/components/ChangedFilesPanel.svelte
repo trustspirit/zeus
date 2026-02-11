@@ -67,11 +67,11 @@
 
   function statusColor(status: GitChangedFile['status']): string {
     switch (status) {
-      case 'added': return '#a6e3a1'
-      case 'deleted': return '#f38ba8'
-      case 'renamed': return '#89b4fa'
+      case 'added': return 'var(--green)'
+      case 'deleted': return 'var(--red)'
+      case 'renamed': return 'var(--blue)'
       case 'modified': return '#f9e2af'
-      default: return '#7f848e'
+      default: return 'var(--text-secondary)'
     }
   }
 
@@ -199,8 +199,8 @@
 
 <style>
   .changed-files-panel {
-    border-top: 1px solid #3e4451;
-    background: #1e2127;
+    border-top: 1px solid var(--border);
+    background: var(--bg-deep);
     max-height: 50vh;
     overflow: hidden;
     display: flex;
@@ -217,7 +217,7 @@
     align-items: center;
     gap: 10px;
     padding: 8px 12px;
-    border-bottom: 1px solid #2c313a;
+    border-bottom: 1px solid var(--bg-raised);
     flex-shrink: 0;
   }
   .panel-title {
@@ -226,12 +226,12 @@
     gap: 6px;
     font-size: 12px;
     font-weight: 600;
-    color: #abb2bf;
+    color: var(--text-primary);
   }
   .file-count {
     font-size: 10px;
     font-weight: 600;
-    color: #e5c07b;
+    color: var(--yellow);
     background: rgba(229, 192, 123, 0.12);
     padding: 1px 6px;
     border-radius: 8px;
@@ -242,8 +242,8 @@
     font-size: 11px;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
   }
-  .stat-add { color: #a6e3a1; }
-  .stat-del { color: #f38ba8; }
+  .stat-add { color: var(--green); }
+  .stat-del { color: var(--red); }
 
   .panel-actions {
     display: flex;
@@ -259,19 +259,19 @@
     border: none;
     border-radius: 5px;
     background: transparent;
-    color: #5c6370;
+    color: var(--text-muted);
     cursor: pointer;
     transition: all 100ms ease;
   }
   .panel-action:hover {
-    background: #2c313a;
-    color: #abb2bf;
+    background: var(--bg-raised);
+    color: var(--text-primary);
   }
 
   .panel-loading, .panel-empty {
     padding: 20px;
     text-align: center;
-    color: #5c6370;
+    color: var(--text-muted);
     font-size: 12px;
   }
 
@@ -281,7 +281,7 @@
     scrollbar-width: thin;
   }
   .file-list::-webkit-scrollbar { width: 4px; }
-  .file-list::-webkit-scrollbar-thumb { background: #3e4451; border-radius: 2px; }
+  .file-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
   .file-item {
     display: flex;
@@ -291,14 +291,14 @@
     padding: 6px 12px;
     border: none;
     background: transparent;
-    color: #abb2bf;
+    color: var(--text-primary);
     cursor: pointer;
     text-align: left;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
     font-size: 12px;
     transition: background 80ms ease;
   }
-  .file-item:hover { background: #2c313a; }
+  .file-item:hover { background: var(--bg-raised); }
   .file-item.active {
     background: var(--accent-bg-subtle);
     border-left: 2px solid var(--accent);
@@ -324,8 +324,8 @@
     flex-shrink: 0;
     font-size: 10px;
   }
-  .ch-add { color: #a6e3a1; }
-  .ch-del { color: #f38ba8; }
+  .ch-add { color: var(--green); }
+  .ch-del { color: var(--red); }
 
   /* ── Diff Viewer ── */
   .diff-viewer {
@@ -333,22 +333,22 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    border-top: 1px solid #2c313a;
+    border-top: 1px solid var(--bg-raised);
   }
   .diff-header {
     padding: 6px 12px;
-    border-bottom: 1px solid #2c313a;
+    border-bottom: 1px solid var(--bg-raised);
     font-size: 11px;
-    color: #7f848e;
+    color: var(--text-secondary);
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
     flex-shrink: 0;
   }
-  .diff-file-name { color: #abb2bf; }
+  .diff-file-name { color: var(--text-primary); }
 
   .diff-loading, .diff-empty {
     padding: 16px;
     text-align: center;
-    color: #5c6370;
+    color: var(--text-muted);
     font-size: 12px;
   }
 
@@ -360,7 +360,7 @@
     scrollbar-width: thin;
   }
   .diff-content::-webkit-scrollbar { width: 4px; height: 4px; }
-  .diff-content::-webkit-scrollbar-thumb { background: #3e4451; border-radius: 2px; }
+  .diff-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
   .diff-line {
     display: flex;
@@ -369,21 +369,21 @@
   }
   .diff-line.diff-add {
     background: rgba(166, 227, 161, 0.08);
-    color: #a6e3a1;
+    color: var(--green);
   }
   .diff-line.diff-remove {
     background: rgba(243, 139, 168, 0.08);
-    color: #f38ba8;
+    color: var(--red);
   }
-  .diff-line.diff-context { color: #5c6370; }
+  .diff-line.diff-context { color: var(--text-muted); }
   .diff-line.diff-hunk {
     background: rgba(137, 180, 250, 0.06);
-    color: #89b4fa;
+    color: var(--blue);
     padding: 2px 12px;
     font-size: 11px;
   }
   .diff-line.diff-info {
-    color: #4b5263;
+    color: var(--border-strong);
     padding: 0 12px;
     font-size: 10px;
   }
@@ -393,7 +393,7 @@
     width: 36px;
     text-align: right;
     padding-right: 8px;
-    color: #3e4451;
+    color: var(--border);
     flex-shrink: 0;
     user-select: none;
   }

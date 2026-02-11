@@ -129,21 +129,21 @@
   .browser-header {
     display: flex; align-items: center; gap: 6px;
     padding: 12px 12px 10px; flex-shrink: 0;
-    color: #5c6370;
+    color: var(--text-muted);
   }
   .header-title {
     font-size: 11px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.04em; color: #5c6370; flex: 1;
+    letter-spacing: 0.04em; color: var(--text-muted); flex: 1;
   }
   .header-count {
-    font-size: 10px; color: #4b5263;
+    font-size: 10px; color: var(--border-strong);
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
   }
 
   /* ── Loading / Empty ── */
   .loading { display: flex; justify-content: center; padding: 32px; }
   .spinner {
-    width: 18px; height: 18px; border: 2px solid #4b5263;
+    width: 18px; height: 18px; border: 2px solid var(--border-strong);
     border-top-color: var(--accent); border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -151,7 +151,7 @@
 
   .empty {
     display: flex; flex-direction: column; align-items: center;
-    padding: 32px 16px; color: #5c6370; text-align: center; gap: 10px;
+    padding: 32px 16px; color: var(--text-muted); text-align: center; gap: 10px;
   }
   .empty p { font-size: 12px; margin: 0; }
 
@@ -161,7 +161,7 @@
   /* ── Folder group ── */
   .folder-group {
     margin-bottom: 0;
-    border-top: 1px solid #222;
+    border-top: 1px solid var(--border-subtle);
     padding-top: 4px;
   }
   .folder-group.first { border-top: none; padding-top: 0; }
@@ -169,14 +169,14 @@
   .folder-header {
     display: flex; align-items: center; gap: 6px;
     width: 100%; padding: 7px 8px; border: none;
-    background: rgba(255,255,255,0.02); color: #7f848e; cursor: pointer;
+    background: rgba(255,255,255,0.02); color: var(--text-secondary); cursor: pointer;
     border-radius: 5px; font-size: 11px; font-weight: 500;
     font-family: inherit; transition: all 100ms ease;
   }
-  .folder-header:hover { background: rgba(255,255,255,0.04); color: #abb2bf; }
+  .folder-header:hover { background: rgba(255,255,255,0.04); color: var(--text-primary); }
 
   .chevron {
-    transition: transform 150ms ease; flex-shrink: 0; color: #4b5263;
+    transition: transform 150ms ease; flex-shrink: 0; color: var(--border-strong);
   }
   .chevron.open { transform: rotate(90deg); }
 
@@ -186,9 +186,9 @@
     display: inline-flex; align-items: center; gap: 3px;
     font-size: 11px; font-weight: 600;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
-    color: #61afef;
+    color: var(--blue);
   }
-  .folder-badge.root { color: #61afef; }
+  .folder-badge.root { color: var(--blue); }
 
   /* Path breadcrumb */
   .folder-path {
@@ -197,12 +197,12 @@
     font-size: 11px; min-width: 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .path-sep { color: #4b5263; margin: 0 2px; }
-  .path-seg { color: #4b5263; }
-  .path-seg.last { color: #d4a840; font-weight: 600; }
+  .path-sep { color: var(--border-strong); margin: 0 2px; }
+  .path-seg { color: var(--border-strong); }
+  .path-seg.last { color: var(--yellow); font-weight: 600; }
 
   .folder-count {
-    font-size: 9px; color: #4b5263; background: #2c313a;
+    font-size: 9px; color: var(--border-strong); background: var(--bg-raised);
     padding: 1px 5px; border-radius: 6px; flex-shrink: 0;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
   }
@@ -220,7 +220,7 @@
   }
   .file-item:hover {
     background: rgba(255,255,255,0.025);
-    border-left-color: #4b5263;
+    border-left-color: var(--border-strong);
   }
   .file-item.active {
     background: var(--accent-bg-subtle);
@@ -232,7 +232,7 @@
     min-width: 0; flex: 1;
   }
 
-  .file-icon { color: #61afef; flex-shrink: 0; margin-top: 1px; }
+  .file-icon { color: var(--blue); flex-shrink: 0; margin-top: 1px; }
   .file-item.active .file-icon { color: var(--accent); }
 
   .file-info {
@@ -240,22 +240,22 @@
   }
 
   .file-name {
-    font-size: 12px; font-weight: 500; color: #abb2bf;
+    font-size: 12px; font-weight: 500; color: var(--text-primary);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .file-item:hover .file-name { color: #abb2bf; }
-  .file-item.active .file-name { color: #abb2bf; font-weight: 600; }
+  .file-item:hover .file-name { color: var(--text-primary); }
+  .file-item.active .file-name { color: var(--text-primary); font-weight: 600; }
 
   .file-relpath {
-    font-size: 10px; color: #4b5263;
+    font-size: 10px; color: var(--border-strong);
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .file-item:hover .file-relpath { color: #5c6370; }
-  .file-item.active .file-relpath { color: #8070a0; }
+  .file-item:hover .file-relpath { color: var(--text-muted); }
+  .file-item.active .file-relpath { color: var(--text-dim); }
 
   .file-size {
-    font-size: 10px; color: #4b5263; flex-shrink: 0;
+    font-size: 10px; color: var(--border-strong); flex-shrink: 0;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
   }
 </style>

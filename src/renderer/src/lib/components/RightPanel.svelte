@@ -59,8 +59,8 @@
   .right-panel {
     width: 320px;
     min-width: 320px;
-    background: #21252b;
-    border-left: 1px solid #181a1f;
+    background: var(--bg-surface);
+    border-left: 1px solid var(--border-subtle);
     display: flex;
     flex-direction: column;
     transition: width 200ms ease, min-width 200ms ease, opacity 200ms ease;
@@ -75,7 +75,7 @@
 
   .tab-strip {
     display: flex;
-    border-bottom: 1px solid #181a1f;
+    border-bottom: 1px solid var(--border-subtle);
     flex-shrink: 0;
   }
 
@@ -88,7 +88,7 @@
     padding: 10px 8px;
     border: none;
     background: transparent;
-    color: #5c6370;
+    color: var(--text-muted);
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
@@ -96,7 +96,7 @@
     border-bottom: 2px solid transparent;
     font-family: inherit;
   }
-  .tab-btn:hover { color: #abb2bf; background: #2c313a; }
+  .tab-btn:hover { color: var(--text-primary); background: var(--bg-raised); }
   .tab-btn.active {
     color: var(--accent);
     border-bottom-color: var(--accent);

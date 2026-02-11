@@ -155,25 +155,25 @@
   .tab-bar::-webkit-scrollbar { height: 3px; }
   .tab-bar::-webkit-scrollbar-track { background: transparent; }
   .tab-bar::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; }
-  .tab-bar:hover::-webkit-scrollbar-thumb { background: #4b5263; }
-  .tab-bar:hover::-webkit-scrollbar-thumb:hover { background: #5c6370; }
+  .tab-bar:hover::-webkit-scrollbar-thumb { background: var(--border-strong); }
+  .tab-bar:hover::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
   .tab {
     display: flex; align-items: center; gap: 2px;
     padding: 5px 8px 5px 12px; border-radius: 6px;
-    white-space: nowrap; font-size: 12px; color: #7f848e;
+    white-space: nowrap; font-size: 12px; color: var(--text-secondary);
     transition: all 120ms ease; border: 1px solid transparent;
     background: transparent; flex-shrink: 0;
   }
-  .tab:hover { background: #2c313a; color: #abb2bf; }
-  .tab.active { background: #2c313a; color: #abb2bf; border-color: #3e4451; }
+  .tab:hover { background: var(--bg-raised); color: var(--text-primary); }
+  .tab.active { background: var(--bg-raised); color: var(--text-primary); border-color: var(--border); }
 
   .tab-body { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 
   .tab-icon { display: flex; align-items: center; }
   .tab-icon.claude { color: var(--accent); }
-  .tab-icon.terminal { color: #61afef; }
-  .tab-icon.doc { color: #61afef; }
+  .tab-icon.terminal { color: var(--blue); }
+  .tab-icon.doc { color: var(--blue); }
 
   .streaming-dot {
     width: 6px; height: 6px; border-radius: 50%;
@@ -187,10 +187,10 @@
   .tab-close {
     display: flex; align-items: center; justify-content: center;
     width: 16px; height: 16px; border-radius: 3px;
-    border: none; background: transparent; color: #5c6370;
+    border: none; background: transparent; color: var(--text-muted);
     cursor: pointer; font-size: 14px; line-height: 1; padding: 0;
   }
-  .tab-close:hover { background: #3e4451; color: #abb2bf; }
+  .tab-close:hover { background: var(--border); color: var(--text-primary); }
 
-  .tab-sep { width: 1px; height: 16px; background: #3e4451; margin: 0 4px; flex-shrink: 0; }
+  .tab-sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; flex-shrink: 0; }
 </style>

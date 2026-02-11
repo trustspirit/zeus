@@ -159,7 +159,7 @@
                 </div>
                 <div class="ws-item-actions">
                   {#if workspaceStore.active?.path === ws.path}
-                    <svg class="ws-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c4a0ff" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    <svg class="ws-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                   {/if}
                   <button class="ws-action-btn" title="Rename" onclick={(e) => startRename(ws, e)}>
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
@@ -261,6 +261,9 @@
         <span class="claude-label">Claude Code</span>
         <span class="claude-version">{claudeStore.version ?? (claudeStore.installed ? 'installed' : 'not installed')}</span>
       </div>
+      <button class="icon-btn small" title="Settings" onclick={() => uiStore.toggleSettings()}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
       <button class="icon-btn small" title="Update Claude Code" onclick={onupdate}>
         <IconRefresh size={14} />
       </button>
@@ -271,15 +274,15 @@
 <style>
   .sidebar {
     width: 260px; min-width: 260px;
-    background: #21252b;
-    border-right: 1px solid #181a1f;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border-subtle);
     display: flex; flex-direction: column;
     transition: width 200ms ease, min-width 200ms ease, opacity 200ms ease;
     overflow: hidden;
   }
   .sidebar.collapsed { width: 0; min-width: 0; opacity: 0; border-right: none; }
 
-  .sidebar-header { padding: 14px 16px 12px; border-bottom: 1px solid #181a1f; }
+  .sidebar-header { padding: 14px 16px 12px; border-bottom: 1px solid var(--border-subtle); }
   .sidebar-logo {
     display: flex; align-items: center; gap: 10px;
     color: var(--accent); font-weight: 600; font-size: 15px; letter-spacing: -0.01em;
@@ -291,38 +294,38 @@
 
   .ws-trigger {
     display: flex; align-items: center; gap: 8px; width: 100%;
-    padding: 8px 10px; border: 1px solid #3e4451; border-radius: 8px;
-    background: #282c34; cursor: pointer;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-base); cursor: pointer;
     font-family: inherit; text-align: left; transition: all 120ms ease;
   }
-  .ws-trigger:hover { border-color: #4b5263; background: #2c313a; }
+  .ws-trigger:hover { border-color: var(--border-strong); background: var(--bg-raised); }
 
   .ws-trigger-icon {
     width: 28px; height: 28px; border-radius: 6px;
-    background: #3e4451; display: flex; align-items: center; justify-content: center;
+    background: var(--border); display: flex; align-items: center; justify-content: center;
     flex-shrink: 0; color: var(--accent); font-size: 13px; font-weight: 600;
-    font-family: 'D2Coding', 'JetBrains Mono', monospace; text-transform: uppercase;
+    font-family: var(--font-mono); text-transform: uppercase;
   }
-  .ws-trigger-icon.empty { color: #5c6370; }
+  .ws-trigger-icon.empty { color: var(--text-muted); }
 
   .ws-trigger-info { flex: 1; min-width: 0; }
   .ws-trigger-name {
-    display: block; font-size: 12px; font-weight: 500; color: #abb2bf;
+    display: block; font-size: 12px; font-weight: 500; color: var(--text-primary);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .ws-trigger-name.placeholder { color: #5c6370; }
+  .ws-trigger-name.placeholder { color: var(--text-muted); }
   .ws-trigger-path {
-    display: block; font-size: 10px; color: #5c6370; margin-top: 1px;
-    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    display: block; font-size: 10px; color: var(--text-muted); margin-top: 1px;
+    font-family: var(--font-mono);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
-  .ws-chevron { flex-shrink: 0; color: #5c6370; transition: transform 150ms ease; }
+  .ws-chevron { flex-shrink: 0; color: var(--text-muted); transition: transform 150ms ease; }
   .ws-chevron.open { transform: rotate(180deg); }
 
   .ws-menu {
     position: absolute; top: calc(100% + 4px); left: 0; right: 0;
-    background: #2c313a; border: 1px solid #3e4451; border-radius: 8px;
+    background: var(--bg-raised); border: 1px solid var(--border); border-radius: 8px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     z-index: 50; max-height: 320px; overflow-y: auto; padding: 4px;
   }
@@ -333,25 +336,25 @@
     border-radius: 5px; cursor: pointer; font-family: inherit;
     text-align: left; transition: background 100ms ease;
   }
-  .ws-menu-item:hover { background: #3e4451; }
+  .ws-menu-item:hover { background: var(--border); }
   .ws-menu-item.active { background: var(--accent-glow); }
 
   .ws-menu-icon {
     width: 24px; height: 24px; border-radius: 5px;
-    background: #3e4451; display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0; color: #7f848e; font-size: 11px; font-weight: 600;
-    font-family: 'D2Coding', 'JetBrains Mono', monospace; text-transform: uppercase;
+    background: var(--border); display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; color: var(--text-secondary); font-size: 11px; font-weight: 600;
+    font-family: var(--font-mono); text-transform: uppercase;
   }
   .ws-menu-icon.active { background: var(--accent-bg-hover); color: var(--accent); }
 
   .ws-menu-info { flex: 1; min-width: 0; }
   .ws-menu-name {
-    display: block; font-size: 12px; font-weight: 500; color: #abb2bf;
+    display: block; font-size: 12px; font-weight: 500; color: var(--text-primary);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .ws-menu-path {
-    display: block; font-size: 10px; color: #5c6370; margin-top: 1px;
-    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    display: block; font-size: 10px; color: var(--text-muted); margin-top: 1px;
+    font-family: var(--font-mono);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
@@ -365,26 +368,26 @@
   .ws-action-btn {
     display: flex; align-items: center; justify-content: center;
     width: 22px; height: 22px; border: none; border-radius: 4px;
-    background: transparent; color: #5c6370; cursor: pointer;
+    background: transparent; color: var(--text-muted); cursor: pointer;
     padding: 0; transition: all 100ms ease;
   }
-  .ws-action-btn:hover { background: #3e4451; color: #abb2bf; }
-  .ws-delete-btn:hover { background: rgba(224, 108, 117, 0.12); color: #e06c75; }
+  .ws-action-btn:hover { background: var(--border); color: var(--text-primary); }
+  .ws-delete-btn:hover { background: var(--red-bg); color: var(--red); }
 
   /* ── Rename input ── */
   .ws-menu-item.rename-row { cursor: default; }
   .ws-menu-item.rename-row:hover { background: transparent; }
   .ws-rename-input {
     flex: 1; min-width: 0; padding: 4px 8px;
-    background: #1e2127; border: 1px solid var(--accent); border-radius: 4px;
-    color: #abb2bf; font-size: 12px; font-weight: 500;
+    background: var(--bg-deep); border: 1px solid var(--accent); border-radius: 4px;
+    color: var(--text-primary); font-size: 12px; font-weight: 500;
     font-family: inherit; outline: none;
   }
 
-  .ws-menu-divider { height: 1px; background: #3e4451; margin: 4px 8px; }
+  .ws-menu-divider { height: 1px; background: var(--border); margin: 4px 8px; }
 
-  .ws-menu-item.add-item { gap: 6px; color: #7f848e; font-size: 12px; padding: 8px 10px; }
-  .ws-menu-item.add-item:hover { color: #abb2bf; }
+  .ws-menu-item.add-item { gap: 6px; color: var(--text-secondary); font-size: 12px; padding: 8px 10px; }
+  .ws-menu-item.add-item:hover { color: var(--text-primary); }
 
   /* ── Sessions ── */
   .sessions-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; margin-top: 4px; }
@@ -395,16 +398,16 @@
   }
   .sessions-label {
     font-size: 10px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.05em; color: #5c6370;
+    letter-spacing: 0.05em; color: var(--text-muted);
   }
   .sessions-actions { display: flex; gap: 2px; }
 
   .ses-btn {
     display: flex; align-items: center; justify-content: center;
     width: 24px; height: 24px; border: none; background: transparent;
-    color: #5c6370; border-radius: 5px; cursor: pointer; transition: all 120ms ease;
+    color: var(--text-muted); border-radius: 5px; cursor: pointer; transition: all 120ms ease;
   }
-  .ses-btn:hover { background: #3e4451; color: #abb2bf; }
+  .ses-btn:hover { background: var(--border); color: var(--text-primary); }
   .ses-btn.claude-accent { color: var(--accent); }
   .ses-btn.claude-accent:hover { background: var(--accent-bg); color: var(--accent-hover); }
 
@@ -415,15 +418,15 @@
     padding: 6px 8px; border: none; background: transparent;
     border-radius: 6px; cursor: pointer; font-family: inherit;
     text-align: left; transition: all 100ms ease;
-    color: #7f848e; font-size: 12px;
+    color: var(--text-secondary); font-size: 12px;
   }
-  .session-item:hover { background: #2c313a; color: #abb2bf; }
-  .session-item.active { background: #2c313a; color: #abb2bf; }
+  .session-item:hover { background: var(--bg-raised); color: var(--text-primary); }
+  .session-item.active { background: var(--bg-raised); color: var(--text-primary); }
 
   .session-icon { display: flex; align-items: center; flex-shrink: 0; }
   .session-icon.claude { color: var(--accent); }
-  .session-icon.claude.muted { color: #8a5eaa; }
-  .session-icon.terminal { color: #61afef; }
+  .session-icon.claude.muted { color: var(--text-dim); }
+  .session-icon.terminal { color: var(--blue); }
 
   .session-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -435,45 +438,45 @@
   @keyframes stream-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
 
   .session-time {
-    font-size: 10px; color: #5c6370; flex-shrink: 0;
-    font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--text-muted); flex-shrink: 0;
+    font-family: var(--font-mono);
   }
 
   .session-close {
     display: none; width: 16px; height: 16px; border: none; background: transparent;
-    color: #5c6370; border-radius: 3px; cursor: pointer;
+    color: var(--text-muted); border-radius: 3px; cursor: pointer;
     font-size: 14px; flex-shrink: 0; align-items: center; justify-content: center;
   }
   .session-item:hover .session-close { display: flex; }
-  .session-close:hover { background: #3e4451; color: #e06c75; }
+  .session-close:hover { background: var(--border); color: var(--red); }
 
   .session-item.saved { opacity: 0.65; }
   .session-item.saved:hover { opacity: 1; }
 
-  .sessions-empty { text-align: center; padding: 20px 12px; color: #5c6370; font-size: 11px; }
+  .sessions-empty { text-align: center; padding: 20px 12px; color: var(--text-muted); font-size: 11px; }
 
   /* ── Footer ── */
-  .sidebar-footer { padding: 12px 16px; border-top: 1px solid #181a1f; flex-shrink: 0; }
+  .sidebar-footer { padding: 12px 16px; border-top: 1px solid var(--border-subtle); flex-shrink: 0; }
   .claude-status { display: flex; align-items: center; gap: 10px; }
 
-  .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: #5c6370; }
-  .status-dot.installed { background: #98c379; box-shadow: 0 0 6px rgba(152, 195, 121, 0.4); }
-  .status-dot.not-installed { background: #e06c75; box-shadow: 0 0 6px rgba(224, 108, 117, 0.4); }
-  .status-dot.updating { background: #e5c07b; animation: pulse 1.5s infinite; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--text-muted); }
+  .status-dot.installed { background: var(--green); box-shadow: 0 0 6px rgba(152, 195, 121, 0.4); }
+  .status-dot.not-installed { background: var(--red); box-shadow: 0 0 6px rgba(224, 108, 117, 0.4); }
+  .status-dot.updating { background: var(--yellow); animation: pulse 1.5s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
   .claude-info { flex: 1; min-width: 0; }
-  .claude-label { display: block; font-size: 12px; font-weight: 500; color: #abb2bf; }
+  .claude-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-primary); }
   .claude-version {
-    display: block; font-size: 10px; color: #5c6370;
-    font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
+    display: block; font-size: 10px; color: var(--text-muted);
+    font-family: var(--font-mono);
   }
 
   .icon-btn {
     display: flex; align-items: center; justify-content: center;
     width: 30px; height: 30px; border: none; background: transparent;
-    color: #7f848e; border-radius: 6px; cursor: pointer; transition: all 120ms ease;
+    color: var(--text-secondary); border-radius: 6px; cursor: pointer; transition: all 120ms ease;
   }
-  .icon-btn:hover { background: #3e4451; color: #abb2bf; }
+  .icon-btn:hover { background: var(--border); color: var(--text-primary); }
   .icon-btn.small { width: 24px; height: 24px; }
 </style>

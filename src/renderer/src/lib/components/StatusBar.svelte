@@ -37,20 +37,20 @@
 <style>
   .statusbar {
     height: 28px; display: flex; align-items: center; justify-content: space-between;
-    padding: 0 12px; background: #21252b; border-top: 1px solid #181a1f;
-    font-size: 11px; color: #5c6370;
+    padding: 0 12px; background: var(--bg-surface); border-top: 1px solid var(--border-subtle);
+    font-size: 11px; color: var(--text-muted);
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
   }
   .left, .right { display: flex; align-items: center; gap: 16px; }
   .item { display: flex; align-items: center; gap: 4px; }
-  .git-item { color: #61afef; }
+  .git-item { color: var(--blue); }
 
   .claude-ver {
     border: none; background: none; cursor: pointer;
     font-family: inherit; font-size: 11px;
-    color: #5c6370; padding: 2px 6px; border-radius: 4px;
+    color: var(--text-muted); padding: 2px 6px; border-radius: 4px;
     display: flex; align-items: center; gap: 4px;
     transition: all 120ms ease;
   }
-  .claude-ver:hover { background: #2c313a; color: var(--accent); }
+  .claude-ver:hover { background: var(--bg-raised); color: var(--accent); }
 </style>

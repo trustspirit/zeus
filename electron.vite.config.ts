@@ -25,7 +25,12 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
-    plugins: [svelte()],
+    plugins: [svelte({
+      onwarn(warning, handler) {
+        if (warning.code?.startsWith('a11y_')) return
+        handler(warning)
+      }
+    })],
     build: {
       rollupOptions: {
         input: {

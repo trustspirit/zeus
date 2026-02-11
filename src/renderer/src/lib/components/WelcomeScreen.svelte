@@ -44,23 +44,23 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #282c34;
+    background: var(--bg-base);
   }
   .content { text-align: center; max-width: 480px; }
   .icon { color: var(--accent); margin-bottom: 20px; opacity: 0.9; }
-  h1 { font-size: 28px; font-weight: 600; color: #abb2bf; margin-bottom: 8px; letter-spacing: -0.02em; }
-  .subtitle { font-size: 15px; color: #7f848e; margin-bottom: 32px; }
+  h1 { font-size: 28px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; letter-spacing: -0.02em; }
+  .subtitle { font-size: 15px; color: var(--text-secondary); margin-bottom: 32px; }
 
   .actions { display: flex; gap: 12px; justify-content: center; margin-bottom: 36px; }
 
   .btn {
     display: flex; align-items: center; gap: 8px;
-    padding: 10px 20px; border: 1px solid #3e4451; background: #2c313a;
-    color: #abb2bf; border-radius: 8px; cursor: pointer;
+    padding: 10px 20px; border: 1px solid var(--border); background: var(--bg-raised);
+    color: var(--text-primary); border-radius: 8px; cursor: pointer;
     font-size: 14px; font-weight: 500; transition: all 120ms ease;
     font-family: inherit;
   }
-  .btn:hover { background: #3e4451; border-color: #4b5263; transform: translateY(-1px); }
+  .btn:hover { background: var(--border); border-color: var(--border-strong); transform: translateY(-1px); }
   .btn.primary {
     background: var(--accent-bg);
     border-color: var(--accent-border);
@@ -72,11 +72,11 @@
   }
 
   .shortcuts { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: center; }
-  .shortcut { font-size: 12px; color: #5c6370; display: flex; align-items: center; gap: 6px; }
+  .shortcut { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
   kbd {
     display: inline-block; padding: 2px 6px; font-size: 11px;
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
-    color: #7f848e; background: #2c313a; border: 1px solid #3e4451;
+    color: var(--text-secondary); background: var(--bg-raised); border: 1px solid var(--border);
     border-radius: 4px; line-height: 1.4;
   }
 </style>

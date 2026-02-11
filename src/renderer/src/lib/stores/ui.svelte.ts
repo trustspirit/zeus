@@ -8,6 +8,20 @@ export interface Toast {
 
 export type ActiveViewType = 'terminal' | 'doc' | 'claude'
 
+export type ThemeId = 'claude-code' | 'anthropic' | 'claude-dark'
+
+export interface ThemeOption {
+  id: ThemeId
+  label: string
+  desc: string
+}
+
+export const THEMES: ThemeOption[] = [
+  { id: 'claude-code', label: 'Claude Code', desc: 'Dark terminal' },
+  { id: 'anthropic',   label: 'Anthropic',   desc: 'Warm light' },
+  { id: 'claude-dark', label: 'Claude Dark',  desc: 'Refined dark' },
+]
+
 export interface ModelOption {
   id: string      // value passed to --model
   label: string   // display name
@@ -75,11 +89,17 @@ class UIStore {
   rightPanelTab = $state<'skills' | 'mcp' | 'docs'>('skills')
   ideModalOpen = $state(false)
   updateModalOpen = $state(false)
+  settingsOpen = $state(false)
   toasts = $state<Toast[]>([])
   termSize = $state('')
 
   /** Which kind of tab is showing in the main content area */
   activeView = $state<ActiveViewType>('terminal')
+
+  /** Active color theme */
+  theme = $state<ThemeId>(
+    (typeof localStorage !== 'undefined' && localStorage.getItem('zeus-theme') as ThemeId) || 'claude-code'
+  )
 
   /** Selected Claude model alias — synced from Claude settings on startup */
   selectedModel = $state<string>('sonnet')
@@ -129,6 +149,22 @@ class UIStore {
   closeContextMenu() {
     this.contextMenuOpen = false
     this.contextMenuTarget = null
+  }
+
+  /** Change theme and persist */
+  setTheme(id: ThemeId) {
+    this.theme = id
+    document.documentElement.setAttribute('data-theme', id)
+    localStorage.setItem('zeus-theme', id)
+  }
+
+  /** Apply persisted theme on startup */
+  applyTheme() {
+    document.documentElement.setAttribute('data-theme', this.theme)
+  }
+
+  toggleSettings() {
+    this.settingsOpen = !this.settingsOpen
   }
 
   /** Prefill the active InputBar with text (e.g. a slash command). */

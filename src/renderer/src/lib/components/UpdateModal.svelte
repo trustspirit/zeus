@@ -81,7 +81,7 @@
         <!-- Up to date -->
         {:else if phase === 'up-to-date'}
           <div class="result-block up-to-date">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#98c379" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
             <div class="result-info">
               <p class="result-title">Already up to date</p>
               <p class="result-version">v{currentVersion ?? '?'}</p>
@@ -96,7 +96,7 @@
               <p class="result-title">Update available</p>
               <div class="version-compare">
                 <span class="ver-current">{currentVersion ?? '?'}</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5c6370" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
                 <span class="ver-latest">{latestVersion ?? '?'}</span>
               </div>
             </div>
@@ -116,7 +116,7 @@
         <!-- Done -->
         {:else if phase === 'done'}
           <div class="result-block up-to-date">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#98c379" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
             <div class="result-info">
               <p class="result-title">Updated successfully!</p>
               <p class="result-version">v{claudeStore.version ?? latestVersion ?? '?'}</p>
@@ -129,7 +129,7 @@
         <!-- Error -->
         {:else if phase === 'error'}
           <div class="result-block error-block">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#e06c75" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
             <div class="result-info">
               <p class="result-title error-text">Update failed</p>
             </div>
@@ -156,30 +156,30 @@
     backdrop-filter: blur(4px);
   }
   .content {
-    position: relative; background: #21252b; border: 1px solid #3e4451;
+    position: relative; background: var(--bg-surface); border: 1px solid var(--border);
     border-radius: 12px; width: 380px; max-height: 80vh;
     overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   }
   .header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 16px 20px; border-bottom: 1px solid #3e4451;
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
   }
-  h2 { font-size: 15px; font-weight: 600; color: #abb2bf; margin: 0; }
+  h2 { font-size: 15px; font-weight: 600; color: var(--text-primary); margin: 0; }
   .close-btn {
     display: flex; align-items: center; justify-content: center;
     width: 28px; height: 28px; border: none; background: transparent;
-    color: #5c6370; border-radius: 6px; cursor: pointer; font-size: 20px;
+    color: var(--text-muted); border-radius: 6px; cursor: pointer; font-size: 20px;
   }
-  .close-btn:hover { background: #3e4451; color: #abb2bf; }
+  .close-btn:hover { background: var(--border); color: var(--text-primary); }
   .body { padding: 20px; }
 
   .status-row {
     display: flex; align-items: center; gap: 12px; padding: 12px 0;
   }
-  .status-row p { color: #abb2bf; font-size: 13px; margin: 0; }
+  .status-row p { color: var(--text-primary); font-size: 13px; margin: 0; }
 
   .spinner {
-    width: 18px; height: 18px; border: 2px solid #3e4451;
+    width: 18px; height: 18px; border: 2px solid var(--border);
     border-top-color: var(--accent); border-radius: 50%;
     animation: spin 0.8s linear infinite; flex-shrink: 0;
   }
@@ -191,10 +191,10 @@
   }
   .result-info { flex: 1; }
   .result-title {
-    font-size: 14px; font-weight: 600; color: #abb2bf; margin: 0 0 4px;
+    font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 0 0 4px;
   }
   .result-version {
-    font-size: 12px; color: #5c6370; margin: 0;
+    font-size: 12px; color: var(--text-muted); margin: 0;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
   }
 
@@ -203,21 +203,21 @@
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
     font-size: 12px;
   }
-  .ver-current { color: #5c6370; }
-  .ver-latest { color: #98c379; font-weight: 600; }
+  .ver-current { color: var(--text-muted); }
+  .ver-latest { color: var(--green); font-weight: 600; }
 
-  .error-text { color: #e06c75 !important; }
+  .error-text { color: var(--red) !important; }
 
   .action-row {
     display: flex; gap: 8px; justify-content: flex-end;
-    margin-top: 16px; padding-top: 16px; border-top: 1px solid #3e4451;
+    margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);
   }
   .btn {
-    padding: 7px 16px; border: 1px solid #4b5263; border-radius: 6px;
+    padding: 7px 16px; border: 1px solid var(--border-strong); border-radius: 6px;
     font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit;
   }
-  .btn.secondary { background: transparent; color: #7f848e; }
-  .btn.secondary:hover { background: #3e4451; color: #abb2bf; }
+  .btn.secondary { background: transparent; color: var(--text-secondary); }
+  .btn.secondary:hover { background: var(--border); color: var(--text-primary); }
   .btn.primary {
     background: var(--accent-bg); border-color: var(--accent-border);
     color: var(--accent);
@@ -227,8 +227,8 @@
   .output {
     margin-top: 8px;
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
-    font-size: 11px; color: #5c6370;
+    font-size: 11px; color: var(--text-muted);
     white-space: pre-wrap; max-height: 200px; overflow-y: auto;
-    background: #21252b; padding: 8px; border-radius: 6px;
+    background: var(--bg-surface); padding: 8px; border-radius: 6px;
   }
 </style>

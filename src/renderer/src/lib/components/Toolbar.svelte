@@ -33,17 +33,17 @@
 <style>
   .toolbar {
     height: 38px; display: flex; align-items: center; justify-content: space-between;
-    padding: 0 12px; background: #21252b; border-bottom: 1px solid #181a1f;
+    padding: 0 12px; background: var(--bg-surface); border-bottom: 1px solid var(--border-subtle);
     -webkit-app-region: no-drag;
   }
   .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 6px; }
 
-  .divider { width: 1px; height: 20px; background: #3e4451; margin: 0 4px; }
+  .divider { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
 
   .icon-btn {
     display: flex; align-items: center; justify-content: center;
     width: 30px; height: 30px; border: none; background: transparent;
-    color: #7f848e; border-radius: 6px; cursor: pointer; transition: all 120ms ease;
+    color: var(--text-secondary); border-radius: 6px; cursor: pointer; transition: all 120ms ease;
   }
-  .icon-btn:hover { background: #3e4451; color: #abb2bf; }
+  .icon-btn:hover { background: var(--border); color: var(--text-primary); }
 </style>

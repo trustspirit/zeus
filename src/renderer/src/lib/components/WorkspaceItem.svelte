@@ -73,13 +73,13 @@
     font-family: inherit;
     border: 2px solid transparent;
   }
-  .workspace-item:hover { background: #1c1c1c; }
-  .workspace-item.active { background: rgba(196, 160, 255, 0.08); }
-  .workspace-item.active .workspace-name { color: #c4a0ff; }
+  .workspace-item:hover { background: var(--bg-deep); }
+  .workspace-item.active { background: var(--accent-bg-subtle); }
+  .workspace-item.active .workspace-name { color: var(--accent); }
 
   /* Drag-over indicator */
   .workspace-item.drag-over {
-    border-top: 2px solid #c4a0ff;
+    border-top: 2px solid var(--accent);
     border-radius: 0;
   }
 
@@ -91,32 +91,32 @@
     cursor: grab;
     transition: color 120ms ease;
   }
-  .workspace-item:hover .drag-handle { color: #606060; }
+  .workspace-item:hover .drag-handle { color: var(--text-muted); }
   .drag-handle:active { cursor: grabbing; }
 
   .workspace-icon {
     width: 32px;
     height: 32px;
     border-radius: 6px;
-    background: #1c1c1c;
+    background: var(--bg-deep);
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: #999;
+    color: var(--text-secondary);
     font-size: 14px;
     font-weight: 600;
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
     text-transform: uppercase;
   }
-  .workspace-icon.active { background: rgba(196, 160, 255, 0.1); color: #c4a0ff; }
+  .workspace-icon.active { background: var(--accent-bg); color: var(--accent); }
 
   .workspace-details { flex: 1; min-width: 0; }
 
   .workspace-name {
     font-size: 13px;
     font-weight: 500;
-    color: #e0e0e0;
+    color: var(--text-bright);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -124,7 +124,7 @@
 
   .workspace-path {
     font-size: 11px;
-    color: #808080;
+    color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

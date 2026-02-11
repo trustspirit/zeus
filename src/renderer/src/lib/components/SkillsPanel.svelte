@@ -370,43 +370,43 @@
   /* ── Scope bar ── */
   .scope-bar {
     display: flex; gap: 4px; margin-bottom: 16px;
-    background: #2c313a; border-radius: 6px; padding: 3px;
+    background: var(--bg-raised); border-radius: 6px; padding: 3px;
     margin-top: 12px;
   }
   .scope-btn {
     flex: 1; padding: 6px 12px; border: none; background: transparent;
-    color: #7f848e; font-size: 12px; font-weight: 500; border-radius: 4px;
+    color: var(--text-secondary); font-size: 12px; font-weight: 500; border-radius: 4px;
     cursor: pointer; transition: all 120ms ease; font-family: inherit;
   }
-  .scope-btn:hover:not(:disabled) { color: #abb2bf; }
-  .scope-btn.active { background: #3e4451; color: #abb2bf; }
+  .scope-btn:hover:not(:disabled) { color: var(--text-primary); }
+  .scope-btn.active { background: var(--border); color: var(--text-primary); }
   .scope-btn:disabled { opacity: 0.4; cursor: default; }
 
   /* ── Filter bar ── */
   .filter-bar {
     display: flex; align-items: center; gap: 6px;
     margin-bottom: 8px; padding: 0 2px;
-    background: #2c313a; border-radius: 6px;
+    background: var(--bg-raised); border-radius: 6px;
     border: 1px solid transparent;
     transition: border-color 120ms ease;
   }
-  .filter-bar:focus-within { border-color: #4b5263; }
-  .filter-icon { flex-shrink: 0; color: #5c6370; margin-left: 8px; }
+  .filter-bar:focus-within { border-color: var(--border-strong); }
+  .filter-icon { flex-shrink: 0; color: var(--text-muted); margin-left: 8px; }
   .filter-input {
     flex: 1; padding: 7px 0; border: none; background: transparent;
-    color: #abb2bf; font-size: 12px; outline: none;
+    color: var(--text-primary); font-size: 12px; outline: none;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
   }
-  .filter-input::placeholder { color: #4b5263; }
+  .filter-input::placeholder { color: var(--border-strong); }
   .filter-clear {
     display: flex; align-items: center; justify-content: center;
     width: 20px; height: 20px; border: none; border-radius: 4px;
-    background: transparent; color: #5c6370; cursor: pointer;
+    background: transparent; color: var(--text-muted); cursor: pointer;
     transition: all 100ms ease;
   }
-  .filter-clear:hover { background: #3e4451; color: #abb2bf; }
+  .filter-clear:hover { background: var(--border); color: var(--text-primary); }
   .filter-count {
-    font-size: 10px; color: #5c6370; margin-right: 8px;
+    font-size: 10px; color: var(--text-muted); margin-right: 8px;
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
     flex-shrink: 0;
   }
@@ -414,7 +414,7 @@
   /* ── Loading ── */
   .loading { display: flex; justify-content: center; padding: 32px; }
   .spinner {
-    width: 20px; height: 20px; border: 2px solid #4b5263;
+    width: 20px; height: 20px; border: 2px solid var(--border-strong);
     border-top-color: var(--accent); border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -425,35 +425,35 @@
   .section-label {
     display: flex; align-items: center; gap: 6px;
     font-size: 10px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.05em; color: #5c6370;
+    letter-spacing: 0.05em; color: var(--text-muted);
     padding: 8px 16px 6px;
     position: sticky; top: 0; z-index: 2;
-    background: #21252b;
-    border-bottom: 1px solid #3e4451;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
     margin: 0 -12px;
   }
   .section-label .count {
-    background: #3e4451; color: #7f848e; font-size: 9px;
+    background: var(--border); color: var(--text-secondary); font-size: 9px;
     padding: 1px 5px; border-radius: 8px; font-weight: 500;
   }
   .kind-badge {
     font-size: 10px; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-  .kind-badge.skill { color: #7abe75; }
-  .kind-badge.agent { color: #70a0d0; }
+  .kind-badge.skill { color: var(--green-soft); }
+  .kind-badge.agent { color: var(--blue); }
   .kind-badge.command { color: var(--accent); }
-  .user-section { color: #4b5263; }
+  .user-section { color: var(--border-strong); }
 
   /* ── Group headers (subdir folders within commands/) ── */
   .group-header {
     display: flex; align-items: center; gap: 6px;
     padding: 5px 10px; margin: 4px 0 2px;
     border-radius: 5px; cursor: pointer;
-    font-size: 11px; font-weight: 600; color: #4b5263;
+    font-size: 11px; font-weight: 600; color: var(--border-strong);
     transition: background 120ms ease;
   }
-  .group-header:hover { background: #2c313a; color: #abb2bf; }
+  .group-header:hover { background: var(--bg-raised); color: var(--text-primary); }
   .group-label { flex: 1; min-width: 0; }
   .chevron {
     transition: transform 150ms ease; flex-shrink: 0;
@@ -465,7 +465,7 @@
     display: flex; align-items: flex-start; gap: 2px;
     border-radius: 6px; transition: background 120ms ease;
   }
-  .custom-skill-item:hover { background: #2c313a; }
+  .custom-skill-item:hover { background: var(--bg-raised); }
 
   .skill-body {
     flex: 1; min-width: 0; padding: 8px 10px; border: none;
@@ -484,15 +484,15 @@
     font-family: 'D2Coding', 'JetBrains Mono', 'SF Mono', monospace;
   }
   .cmd-origin {
-    font-size: 10px; color: #5c6370; background: #2c313a;
+    font-size: 10px; color: var(--text-muted); background: var(--bg-raised);
     padding: 1px 5px; border-radius: 3px;
   }
   .cmd-desc {
-    font-size: 11px; color: #7f848e; line-height: 1.4;
+    font-size: 11px; color: var(--text-secondary); line-height: 1.4;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .cmd-path {
-    font-size: 10px; color: #4b5263; font-family: 'D2Coding', 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--border-strong); font-family: 'D2Coding', 'JetBrains Mono', monospace;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
@@ -505,21 +505,21 @@
 
   .action-btn {
     width: 24px; height: 24px; border: none; border-radius: 4px;
-    background: transparent; color: #5c6370; cursor: pointer;
+    background: transparent; color: var(--text-muted); cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     transition: all 120ms ease;
   }
-  .action-btn:hover { background: #3e4451; color: #abb2bf; }
+  .action-btn:hover { background: var(--border); color: var(--text-primary); }
 
   /* ── Empty state ── */
   .empty-custom {
-    text-align: center; padding: 24px 16px; color: #5c6370;
+    text-align: center; padding: 24px 16px; color: var(--text-muted);
   }
   .empty-icon { margin-bottom: 12px; opacity: 0.4; }
-  .empty-title { font-size: 13px; font-weight: 600; color: #7f848e; margin: 0 0 6px; }
+  .empty-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin: 0 0 6px; }
   .empty-desc { font-size: 11px; line-height: 1.6; margin: 0; }
   .empty-desc code {
-    background: #2c313a; padding: 1px 5px; border-radius: 3px;
+    background: var(--bg-raised); padding: 1px 5px; border-radius: 3px;
     font-size: 11px; font-family: 'D2Coding', 'JetBrains Mono', monospace;
     color: var(--accent);
   }
@@ -530,14 +530,14 @@
     gap: 12px; padding: 10px 10px; border-radius: 6px;
     cursor: pointer; transition: background 120ms ease;
   }
-  .skill-item:hover { background: #2c313a; }
+  .skill-item:hover { background: var(--bg-raised); }
 
   .skill-info { flex: 1; min-width: 0; }
   .skill-name {
-    display: block; font-size: 13px; font-weight: 500; color: #abb2bf;
+    display: block; font-size: 13px; font-weight: 500; color: var(--text-primary);
   }
   .skill-desc-text {
-    display: block; font-size: 11px; color: #5c6370; margin-top: 2px;
+    display: block; font-size: 11px; color: var(--text-muted); margin-top: 2px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
@@ -550,13 +550,13 @@
   }
   .toggle-slider {
     position: absolute; inset: 0;
-    background: #4b5263; border-radius: 10px;
+    background: var(--border-strong); border-radius: 10px;
     transition: background 200ms ease;
   }
   .toggle-slider::after {
     content: ''; position: absolute;
     width: 16px; height: 16px; border-radius: 50%;
-    background: #7f848e; top: 2px; left: 2px;
+    background: var(--text-secondary); top: 2px; left: 2px;
     transition: transform 200ms ease, background 200ms ease;
   }
   .toggle.on .toggle-slider { background: var(--accent-border); }

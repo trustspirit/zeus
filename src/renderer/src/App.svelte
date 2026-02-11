@@ -21,6 +21,7 @@
   import UpdateModal from './lib/components/UpdateModal.svelte'
   import ContextMenu from './lib/components/ContextMenu.svelte'
   import Toast from './lib/components/Toast.svelte'
+  import SettingsPanel from './lib/components/SettingsPanel.svelte'
 
   /** Show welcome only when nothing is open */
   const hasContent = $derived(
@@ -32,6 +33,9 @@
   let unsubs: Array<() => void> = []
 
   onMount(async () => {
+    // Apply persisted theme immediately
+    uiStore.applyTheme()
+
     await Promise.all([
       workspaceStore.load(),
       claudeStore.check(),
@@ -248,6 +252,7 @@
     }
     if (e.key === 'Escape') {
       uiStore.updateModalOpen = false
+      uiStore.settingsOpen = false
       uiStore.closeContextMenu()
     }
   }
@@ -295,6 +300,7 @@
 
 <UpdateModal />
 <ContextMenu onaction={handleContextAction} />
+<SettingsPanel />
 <Toast />
 
 <style>
@@ -322,7 +328,7 @@
     align-items: center;
     justify-content: center;
     background: var(--bg-surface);
-    border-bottom: 1px solid #181a1f;
+    border-bottom: 1px solid var(--border-subtle);
     -webkit-app-region: drag;
   }
   .titlebar-text {

@@ -66,7 +66,7 @@
         return {
           path: 'M16 18l6-6-6-6M8 6l-6 6 6 6',
           viewBox: '0 0 24 24',
-          color: '#7f848e'
+          color: 'var(--text-secondary)'
         }
     }
   }
@@ -150,14 +150,14 @@
     padding: 0 8px;
     border: none;
     background: transparent;
-    color: #7f848e;
+    color: var(--text-secondary);
     border-radius: 6px;
     cursor: pointer;
     transition: all 120ms ease;
   }
   .ide-trigger:hover, .ide-trigger.active {
-    background: #3e4451;
-    color: #abb2bf;
+    background: var(--border);
+    color: var(--text-primary);
   }
   .caret {
     transition: transform 150ms ease;
@@ -170,8 +170,8 @@
     top: calc(100% + 6px);
     right: 0;
     min-width: 220px;
-    background: #2c313a;
-    border: 1px solid #4b5263;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-strong);
     border-radius: 10px;
     padding: 4px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
@@ -187,7 +187,7 @@
     padding: 6px 10px 4px;
     font-size: 10px;
     font-weight: 600;
-    color: #4b5263;
+    color: var(--border-strong);
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -195,7 +195,7 @@
   .ide-empty {
     padding: 12px;
     text-align: center;
-    color: #5c6370;
+    color: var(--text-muted);
     font-size: 12px;
   }
 
@@ -208,13 +208,13 @@
     border: none;
     border-radius: 7px;
     background: transparent;
-    color: #abb2bf;
+    color: var(--text-primary);
     cursor: pointer;
     text-align: left;
     font-family: inherit;
     transition: background 80ms ease;
   }
-  .ide-option:hover { background: #3e4451; }
+  .ide-option:hover { background: var(--border); }
 
   .ide-icon-wrap {
     width: 30px;
@@ -239,7 +239,7 @@
   }
   .ide-cmd {
     font-size: 10px;
-    color: #5c6370;
+    color: var(--text-muted);
     font-family: 'D2Coding', 'JetBrains Mono', monospace;
   }
 </style>
