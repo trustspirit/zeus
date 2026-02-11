@@ -35,6 +35,8 @@ import {
   getSession,
   deleteSession,
   spawnClaudeSession,
+  respondToSession,
+  abortSession,
   killAllClaudeSessions
 } from './claude-session.js'
 import {
@@ -393,7 +395,7 @@ function registerIPC(): void {
     return readClaudeTranscript(sessionId, workspacePath)
   })
 
-  // ── Claude Session (headless -p mode) ──
+  // ── Claude Session (PTY-based) ──
   ipcMain.handle(
     'claude-session:send',
     (_, conversationId: string, prompt: string, cwd: string, model?: string, resumeSessionId?: string) => {
@@ -402,39 +404,17 @@ function registerIPC(): void {
   )
 
   ipcMain.handle('claude-session:abort', (_, conversationId: string) => {
-    const session = getSession(conversationId)
-    if (session?.process) {
-      if (session.stdinReady && session.process.stdin && !session.process.stdin.destroyed) {
-        try { session.process.stdin.end() } catch { /* ignore */ }
-        session.stdinReady = false
-      }
-      session.process.kill('SIGINT')
-    }
-    return true
+    return abortSession(conversationId)
   })
 
   ipcMain.handle('claude-session:respond', (_, conversationId: string, response: string) => {
+    // With PTY, stdin is always available — just write directly
+    if (respondToSession(conversationId, response)) return true
+
+    // Fallback: PTY died but we have a session ID — re-spawn with --resume
     const session = getSession(conversationId)
-    if (!session) return false
-
-    // Primary: write directly to stdin
-    if (session.stdinReady && session.process?.stdin && !session.process.stdin.destroyed) {
-      console.log(`[zeus] Responding to prompt [${conversationId}] via stdin: "${response}"`)
-      session.process.stdin.write(response + '\n')
-      return true
-    }
-
-    // Fallback: abort + re-spawn with --resume
-    console.log(`[zeus] stdin unavailable for [${conversationId}], falling back to abort+resume`)
-    if (session.process) {
-      try { session.process.kill('SIGINT') } catch { /* ignore */ }
-      session.process.removeAllListeners()
-      session.process.stdout?.removeAllListeners()
-      session.process.stderr?.removeAllListeners()
-      session.process = null
-    }
-
-    if (session.sessionId && session.cwd) {
+    if (session?.sessionId && session.cwd) {
+      console.log(`[zeus] PTY unavailable for [${conversationId}], re-spawning with --resume`)
       return spawnClaudeSession(conversationId, response, session.cwd, undefined, session.sessionId)
     }
     return false
@@ -442,13 +422,8 @@ function registerIPC(): void {
 
   ipcMain.handle('claude-session:close', (_, conversationId: string) => {
     const session = getSession(conversationId)
-    if (session?.process) {
-      try {
-        if (session.stdinReady && session.process.stdin && !session.process.stdin.destroyed) {
-          session.process.stdin.end()
-        }
-        session.process.kill('SIGINT')
-      } catch { /* ignore */ }
+    if (session?.pty) {
+      try { session.pty.kill() } catch { /* ignore */ }
     }
     deleteSession(conversationId)
     stopSubagentWatch()
@@ -490,7 +465,7 @@ app.whenReady().then(() => {
   const pty = require('node-pty')
   initStore()
   initTerminal(pty, () => mainWindow)
-  initClaudeSession(() => mainWindow)
+  initClaudeSession(pty, () => mainWindow)
   initSubagentWatcher(() => mainWindow)
   registerIPC()
   createWindow()

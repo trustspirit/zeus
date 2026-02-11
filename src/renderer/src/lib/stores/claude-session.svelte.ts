@@ -424,12 +424,25 @@ class ClaudeSessionStore {
   /** Respond to a pending prompt (permission, option selection, etc.)
    *  Primary path: writes the response to the still-open stdin (process stays alive).
    *  Fallback: if stdin is unavailable, aborts and re-spawns with --resume. */
-  async respond(id: string, response: string): Promise<void> {
+  async respond(id: string, response: string, label?: string): Promise<void> {
     const conv = this.conversations.find((c) => c.id === id)
     if (!conv?.pendingPrompt) return
 
     const prompt = conv.pendingPrompt
     conv.pendingPrompt = null
+
+    // Record the user's choice as a visible message so it doesn't just show a bare value
+    const displayLabel = label || prompt.options.find(o => o.value === response)?.label || response
+    const choiceMsg: ClaudeMessage = {
+      id: `msg-${Date.now()}-choice`,
+      role: 'user',
+      content: response,
+      displayContent: `${displayLabel}`,
+      timestamp: Date.now()
+    }
+    conv.messages = [...conv.messages, choiceMsg]
+
+    conv.isStreaming = true  // Re-activate streaming (process may have exited; respond will re-spawn)
     conv.streamingStatus = 'Responding…'
     this.conversations = [...this.conversations]
 
@@ -653,9 +666,15 @@ class ClaudeSessionStore {
       conv.claudeSessionId = sid
     }
 
-    // Handle different event types from stream-json (with --verbose --include-partial-messages)
-    // Event types: system, assistant, user, result, content_block_start, content_block_delta, content_block_stop
+    // Handle different event types from stream-json
+    // Event types: system, assistant, user, result, content_block_start, content_block_delta, content_block_stop, prompt, error, stderr, raw
     const any = event as Record<string, unknown>
+
+    // Log non-standard events for debugging
+    const knownTypes = new Set(['system', 'assistant', 'user', 'result', 'content_block_start', 'content_block_delta', 'content_block_stop', 'prompt', 'error', 'stderr', 'raw', 'stream_event'])
+    if (event.type && !knownTypes.has(event.type)) {
+      console.log(`[zeus] Unhandled event type: "${event.type}"`, JSON.stringify(any).slice(0, 500))
+    }
 
     if (event.type === 'assistant' && event.message?.content) {
       // Assistant message snapshot — contains full content so far.
@@ -1317,11 +1336,42 @@ class ClaudeSessionStore {
     const conv = this._findConv(id)
     if (!conv) return
 
+    console.log(`[zeus] _handleDone: id=${id}, exitCode=${exitCode}, hasPendingPrompt=${!!conv.pendingPrompt}, hasContent=${!!conv.streamingContent.trim()}`)
+
     // Stop subagent watcher when session ends
     this._stopSubagentWatch()
 
     if (sessionId) {
       conv.claudeSessionId = sessionId
+    }
+
+    // ── If there's a pending prompt, the process exited while waiting for user input.
+    // Keep the prompt visible and preserve streaming content — don't finalize yet.
+    // The user needs to respond (which will re-spawn with --resume).
+    if (conv.pendingPrompt) {
+      // Finalize streaming content into a committed message so it persists,
+      // but keep the prompt visible.
+      if (conv.streamingContent.trim()) {
+        const assistantMsg: ClaudeMessage = {
+          id: `msg-${Date.now()}-assistant`,
+          role: 'assistant',
+          content: conv.streamingContent,
+          blocks: conv.streamingBlocks.length > 0 ? [...conv.streamingBlocks] : undefined,
+          timestamp: Date.now()
+        }
+        conv.messages = [...conv.messages, assistantMsg]
+      }
+      // Mark as NOT streaming (process exited), but keep pendingPrompt alive
+      conv.isStreaming = false
+      conv.streamingContent = ''
+      conv.streamingBlocks = []
+      conv.streamingStatus = 'Waiting for your response…'
+      conv.activeSubagents = []
+      this._resetBlockTracking()
+      this._lastMeaningfulStatus.delete(conv.id)
+      this._taskIdToAgent.clear()
+      this.conversations = [...this.conversations]
+      return
     }
 
     // Finalize streaming content into a message
@@ -1334,6 +1384,24 @@ class ClaudeSessionStore {
         timestamp: Date.now()
       }
       conv.messages = [...conv.messages, assistantMsg]
+    } else if (conv.streamingBlocks.length > 0) {
+      // Content may be entirely in blocks (tool calls etc.) with no plain text
+      const blockText = conv.streamingBlocks.map(b => {
+        if (b.type === 'text') return b.text || ''
+        if (b.type === 'tool_use') return `[Tool: ${b.name}]`
+        if (b.type === 'tool_result') return b.content || ''
+        return ''
+      }).join('\n').trim()
+      if (blockText) {
+        const assistantMsg: ClaudeMessage = {
+          id: `msg-${Date.now()}-assistant`,
+          role: 'assistant',
+          content: blockText,
+          blocks: [...conv.streamingBlocks],
+          timestamp: Date.now()
+        }
+        conv.messages = [...conv.messages, assistantMsg]
+      }
     } else if (exitCode !== 0) {
       // Error case
       const errorMsg: ClaudeMessage = {

@@ -48,7 +48,7 @@
     const match = prompt.options.find((o) => o.key === key || o.value === key)
     if (match) {
       e.preventDefault()
-      claudeSessionStore.respond(conv.id, match.value)
+      claudeSessionStore.respond(conv.id, match.value, match.label)
     }
   }
 
@@ -435,78 +435,7 @@
                   <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                   <div class="md">{@html renderMarkdown(conv.streamingContent)}</div>
                 {/if}
-                <!-- Prompt UI: shown when Claude Code asks for permission/options -->
-                {#if conv.pendingPrompt}
-                  <div class="prompt-ui">
-                    <div class="prompt-header">
-                      {#if conv.pendingPrompt.promptType === 'permission'}
-                        <svg class="prompt-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                      {:else if conv.pendingPrompt.promptType === 'choice'}
-                        <svg class="prompt-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
-                      {:else}
-                        <svg class="prompt-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                      {/if}
-                      <span class="prompt-message">{conv.pendingPrompt.message}</span>
-                    </div>
-                    {#if conv.pendingPrompt.toolName}
-                      <div class="prompt-tool">
-                        <code>{conv.pendingPrompt.toolName}</code>
-                        {#if conv.pendingPrompt.toolInput}
-                          <span class="prompt-tool-input">{conv.pendingPrompt.toolInput.length > 120 ? conv.pendingPrompt.toolInput.slice(0, 120) + '…' : conv.pendingPrompt.toolInput}</span>
-                        {/if}
-                      </div>
-                    {/if}
-                    <!-- Quick-select buttons (shown when options are available) -->
-                    {#if conv.pendingPrompt.options.length > 0}
-                      <div class="prompt-actions">
-                        {#each conv.pendingPrompt.options as opt (opt.value)}
-                          <button
-                            class="prompt-btn"
-                            class:prompt-yes={opt.value === 'y'}
-                            class:prompt-no={opt.value === 'n'}
-                            class:prompt-always={opt.value === 'a'}
-                            onclick={() => claudeSessionStore.respond(conv.id, opt.value)}
-                            title={opt.key ? `Press ${opt.key}` : ''}
-                          >
-                            {#if opt.value === 'y'}
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                            {:else if opt.value === 'n'}
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                            {:else if opt.value === 'a'}
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                            {/if}
-                            {opt.label}
-                            {#if opt.key}
-                              <kbd class="prompt-kbd">{opt.key}</kbd>
-                            {/if}
-                          </button>
-                        {/each}
-                      </div>
-                    {/if}
-                    <!-- Free text input — always shown so the user can type a custom response -->
-                    <form class="prompt-input-form" onsubmit={(e) => {
-                      e.preventDefault()
-                      const form = e.currentTarget as HTMLFormElement
-                      const input = form.querySelector('input') as HTMLInputElement
-                      if (input.value.trim()) {
-                        claudeSessionStore.respond(conv.id, input.value.trim())
-                        input.value = ''
-                      }
-                    }}>
-                      <!-- svelte-ignore a11y_autofocus -->
-                      <input
-                        class="prompt-text-input"
-                        type="text"
-                        placeholder={conv.pendingPrompt.options.length > 0 ? 'Or type a custom response…' : 'Type your response…'}
-                        autofocus
-                      />
-                      <button class="prompt-btn prompt-yes" type="submit">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                        Send
-                      </button>
-                    </form>
-                  </div>
-                {:else if conv.activeSubagents && conv.activeSubagents.length > 0}
+                {#if conv.activeSubagents && conv.activeSubagents.length > 0}
                   <!-- Subagent table: compact status view -->
                   {@const activeAgents = conv.activeSubagents.filter(s => !s.finished)}
                   <div class="sa-table">
@@ -566,6 +495,89 @@
                     {/if}
                   </div>
                 {/if}
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        <!-- ── Prompt UI: shown when Claude Code asks for permission/options ── -->
+        <!-- Lives OUTSIDE the streaming block so it persists even after the process exits -->
+        {#if conv.pendingPrompt}
+          <div class="msg assistant">
+            <div class="msg-assistant">
+              <div class="msg-avatar">
+                <IconClaude size={18} />
+              </div>
+              <div class="msg-content">
+                <div class="prompt-ui">
+                  <div class="prompt-header">
+                    {#if conv.pendingPrompt.promptType === 'permission'}
+                      <svg class="prompt-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    {:else if conv.pendingPrompt.promptType === 'choice'}
+                      <svg class="prompt-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+                    {:else}
+                      <svg class="prompt-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    {/if}
+                    <span class="prompt-message">{conv.pendingPrompt.message}</span>
+                  </div>
+                  {#if conv.pendingPrompt.toolName}
+                    <div class="prompt-tool">
+                      <code>{conv.pendingPrompt.toolName}</code>
+                      {#if conv.pendingPrompt.toolInput}
+                        <span class="prompt-tool-input">{conv.pendingPrompt.toolInput.length > 120 ? conv.pendingPrompt.toolInput.slice(0, 120) + '…' : conv.pendingPrompt.toolInput}</span>
+                      {/if}
+                    </div>
+                  {/if}
+                  <!-- Quick-select buttons (shown when options are available) -->
+                  {#if conv.pendingPrompt.options.length > 0}
+                    <div class="prompt-actions">
+                      {#each conv.pendingPrompt.options as opt (opt.value)}
+                        <button
+                          class="prompt-btn"
+                          class:prompt-yes={opt.value === 'y'}
+                          class:prompt-no={opt.value === 'n'}
+                          class:prompt-always={opt.value === 'a'}
+                          onclick={() => claudeSessionStore.respond(conv.id, opt.value, opt.label)}
+                          title={opt.key ? `Press ${opt.key}` : ''}
+                        >
+                          {#if opt.value === 'y'}
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                          {:else if opt.value === 'n'}
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          {:else if opt.value === 'a'}
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                          {/if}
+                          {opt.label}
+                          {#if opt.key}
+                            <kbd class="prompt-kbd">{opt.key}</kbd>
+                          {/if}
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
+                  <!-- Free text input — always shown so the user can type a custom response -->
+                  <form class="prompt-input-form" onsubmit={(e) => {
+                    e.preventDefault()
+                    const form = e.currentTarget as HTMLFormElement
+                    const input = form.querySelector('input') as HTMLInputElement
+                    if (input.value.trim()) {
+                      claudeSessionStore.respond(conv.id, input.value.trim())
+                      input.value = ''
+                    }
+                  }}>
+                    <!-- svelte-ignore a11y_autofocus -->
+                    <input
+                      class="prompt-text-input"
+                      type="text"
+                      placeholder={conv.pendingPrompt.options.length > 0 ? 'Or type a custom response…' : 'Type your response…'}
+                      autofocus
+                    />
+                    <button class="prompt-btn prompt-yes" type="submit">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                      Send
+                    </button>
+                  </form>
+                </div>
               </div>
             </div>
           </div>
