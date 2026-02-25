@@ -130,29 +130,34 @@
   // When workspace changes, swap all tab states to workspace-scoped snapshots
   let prevWorkspacePath: string | null = null
   let switchingWorkspace = false
-  $effect(() => {
-    const ws = workspaceStore.active
-    if (ws && ws.path !== prevWorkspacePath && !switchingWorkspace) {
-      switchingWorkspace = true
-      prevWorkspacePath = ws.path
-
+  async function handleWorkspaceSwitch(wsPath: string): Promise<void> {
+    if (switchingWorkspace) return
+    switchingWorkspace = true
+    try {
       // Switch all stores to this workspace's tab state
-      const hadConversations = claudeSessionStore.switchWorkspace(ws.path)
-      terminalStore.switchWorkspace(ws.path)
-      markdownStore.switchWorkspace(ws.path)
+      const hadConversations = claudeSessionStore.switchWorkspace(wsPath)
+      terminalStore.switchWorkspace(wsPath)
+      markdownStore.switchWorkspace(wsPath)
 
-      // Load saved sessions for this workspace
-      claudeSessionStore.loadSaved(ws.path)
+      // Load saved sessions for this workspace (await to prevent race)
+      await claudeSessionStore.loadSaved(wsPath).catch(() => {})
 
       // Auto-open Claude conversation if none exist for this workspace
       if (claudeStore.installed && !hadConversations) {
-        launchClaudeConversation(ws.path)
+        launchClaudeConversation(wsPath)
       } else if (hadConversations) {
         // Ensure we're viewing the Claude tab if conversations were restored
         uiStore.activeView = 'claude'
       }
-
+    } finally {
       switchingWorkspace = false
+    }
+  }
+  $effect(() => {
+    const ws = workspaceStore.active
+    if (ws && ws.path !== prevWorkspacePath && !switchingWorkspace) {
+      prevWorkspacePath = ws.path
+      handleWorkspaceSwitch(ws.path)
     }
   })
 

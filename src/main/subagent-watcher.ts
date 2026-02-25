@@ -351,5 +351,6 @@ export function stopSubagentWatch(): void {
     clearInterval(_state.intervalId)
     console.log(`[zeus] Subagent watcher stopped for ${_state.conversationId}`)
     _state = null
+    _pollCount = 0
   }
 }

@@ -83,14 +83,18 @@
     return `${mins}m ${rem}s`
   }
 
-  // [P2] Auto-scroll with rAF throttle
+  // [P2] Auto-scroll with rAF throttle — only when user is near bottom
   let scrollPending = false
+  function isNearBottom(): boolean {
+    if (!scrollEl) return true
+    return scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 100
+  }
   $effect(() => {
     const _ = conv?.messages.length
     const __ = conv?.streamingContent
     void _
     void __
-    if (!scrollPending) {
+    if (!scrollPending && isNearBottom()) {
       scrollPending = true
       requestAnimationFrame(() => {
         scrollPending = false
@@ -119,7 +123,7 @@
     if (cached) return cached
     try {
       const raw = marked.parse(text, { async: false }) as string
-      const html = DOMPurify.sanitize(raw, { ADD_TAGS: ['details', 'summary'], ADD_ATTR: ['style', 'class'] })
+      const html = DOMPurify.sanitize(raw, { ADD_TAGS: ['details', 'summary'], ADD_ATTR: ['class'] })
       if (mdCache.size >= MD_CACHE_MAX) {
         const firstKey = mdCache.keys().next().value
         if (firstKey !== undefined) mdCache.delete(firstKey)
@@ -129,6 +133,11 @@
     } catch {
       return `<p>${DOMPurify.sanitize(text)}</p>`
     }
+  }
+
+  /** Escape HTML entities in user-controlled strings before markdown interpolation */
+  function escapeHtml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/`/g, '&#96;')
   }
 
   /** Human-readable tool labels — matches Claude Code CLI style */
@@ -144,38 +153,38 @@
     return TOOL_DISPLAY[name.toLowerCase()] || name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
   }
 
-  /** Format tool invocation in CLI-like compact style */
+  /** Format tool invocation in CLI-like compact style (all values escaped) */
   function formatToolCompact(name: string, input: Record<string, unknown>): string {
     const lower = name.toLowerCase()
     // Read/Write/Edit — show file path
     if ((lower === 'read' || lower === 'write' || lower === 'edit' || lower === 'multiedit') && input.file_path) {
-      return `${formatToolName(name)} \`${input.file_path}\``
+      return `${formatToolName(name)} \`${escapeHtml(String(input.file_path))}\``
     }
     // Bash — show command
     if (lower === 'bash' && input.command) {
       const cmd = String(input.command)
-      return `Bash \`${cmd.length > 80 ? cmd.slice(0, 80) + '…' : cmd}\``
+      return `Bash \`${escapeHtml(cmd.length > 80 ? cmd.slice(0, 80) + '…' : cmd)}\``
     }
     // Grep — show pattern + optional path
     if (lower === 'grep' && input.pattern) {
       const target = input.file_path || input.path || ''
-      return `Grep \`${input.pattern}\`${target ? ` in ${target}` : ''}`
+      return `Grep \`${escapeHtml(String(input.pattern))}\`${target ? ` in ${escapeHtml(String(target))}` : ''}`
     }
     // Glob — show pattern
     if (lower === 'glob' && input.pattern) {
-      return `Glob \`${input.pattern}\``
+      return `Glob \`${escapeHtml(String(input.pattern))}\``
     }
     // LS — show path
     if (lower === 'ls' && input.path) {
-      return `List \`${input.path}\``
+      return `List \`${escapeHtml(String(input.path))}\``
     }
     // Search — show query
     if ((lower === 'search' || lower === 'webfetch') && input.query) {
-      return `${formatToolName(name)} "${String(input.query).slice(0, 60)}"`
+      return `${formatToolName(name)} "${escapeHtml(String(input.query).slice(0, 60))}"`
     }
     // Generic fallback
     const detail = input.file_path || input.command || input.query || input.pattern || input.path
-    if (detail) return `${formatToolName(name)} \`${String(detail).slice(0, 80)}\``
+    if (detail) return `${formatToolName(name)} \`${escapeHtml(String(detail).slice(0, 80))}\``
     return formatToolName(name)
   }
 
@@ -252,9 +261,9 @@
             const color = saColor(agentName)
             const desc = block.input?.description || block.input?.prompt
             const descText = typeof desc === 'string'
-              ? (desc.length > 120 ? desc.slice(0, 120) + '…' : desc)
+              ? escapeHtml(desc.length > 120 ? desc.slice(0, 120) + '…' : desc)
               : ''
-            parts.push(`\n<span class="tool-agent" style="color:${color}">⦿ **${agentName}**${descText ? `<span class="tool-desc"> — ${descText}</span>` : ''}</span>\n`)
+            parts.push(`\n<span class="tool-agent" style="color:${escapeHtml(color)}">⦿ **${escapeHtml(agentName)}**${descText ? `<span class="tool-desc"> — ${descText}</span>` : ''}</span>\n`)
             inSubagent = true
           } else if (isSubagentAuxTool(name)) {
             // Try to resolve agent name from task_id by scanning earlier blocks
@@ -278,7 +287,7 @@
               }
               if (agentsFromBlocks.length > 0) resolvedAgents = agentsFromBlocks
             }
-            const label = subagentAuxLabel(name, block.input ?? {}, resolvedAgents)
+            const label = escapeHtml(subagentAuxLabel(name, block.input ?? {}, resolvedAgents))
             parts.push(`\n<span class="tool-wait">⏳ ${label}</span>\n`)
           } else {
             // CLI-like compact tool display with icon
@@ -291,8 +300,8 @@
         }
         case 'tool_result':
           if (block.content) {
-            const summary = summarizeToolResult(block.content, lastToolName)
-            const content = block.content.length > 500 ? block.content.slice(0, 500) + '…' : block.content
+            const summary = escapeHtml(summarizeToolResult(block.content, lastToolName))
+            const content = escapeHtml(block.content.length > 500 ? block.content.slice(0, 500) + '…' : block.content)
             const prefix = inSubagent ? '> ' : ''
             parts.push(`${prefix}<details><summary class="tool-result-summary">  ⎿ ${summary}</summary>\n\n\`\`\`\n${content}\n\`\`\`\n</details>\n`)
           }

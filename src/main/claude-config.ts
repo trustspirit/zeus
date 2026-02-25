@@ -51,9 +51,17 @@ export function writeProjectClaudeConfig(wsPath: string, config: object): boolea
 
 // ── MCP ────────────────────────────────────────────────────────────────────────
 
+/** Validate npm package name (scoped or unscoped) */
+function isValidPackageName(pkg: string): boolean {
+  return /^@?[\w][\w./-]*$/.test(pkg)
+}
+
 export function installMCPPackage(pkg: string): Promise<{ success: boolean; output?: string; error?: string }> {
+  if (!isValidPackageName(pkg)) {
+    return Promise.resolve({ success: false, error: `Invalid package name: ${pkg}` })
+  }
   return new Promise((resolve) => {
-    const child = spawn('npm', ['install', '-g', pkg], { shell: true, env: getShellEnv() })
+    const child = spawn('npm', ['install', '-g', pkg], { env: getShellEnv() })
     let stdout = ''
     let stderr = ''
     child.stdout?.on('data', (d: Buffer) => (stdout += d.toString()))
@@ -78,7 +86,6 @@ export function checkMcpHealth(): Promise<McpHealthEntry[]> {
   return new Promise((resolve) => {
     const claudePath = getClaudeCliPath()
     const child = spawn(claudePath, ['mcp', 'list'], {
-      shell: true,
       env: getShellEnv(),
       timeout: 30000
     })
@@ -130,7 +137,6 @@ export function listPlugins(): Promise<PluginEntry[]> {
   return new Promise((resolve) => {
     const claudePath = getClaudeCliPath()
     const child = spawn(claudePath, ['plugin', 'list'], {
-      shell: true,
       env: getShellEnv(),
       timeout: 15000
     })
@@ -165,7 +171,6 @@ export function listMarketplaces(): Promise<MarketplaceEntry[]> {
   return new Promise((resolve) => {
     const claudePath = getClaudeCliPath()
     const child = spawn(claudePath, ['plugin', 'marketplace', 'list'], {
-      shell: true,
       env: getShellEnv(),
       timeout: 15000
     })
@@ -188,11 +193,20 @@ export function listMarketplaces(): Promise<MarketplaceEntry[]> {
   })
 }
 
+/** Allowed plugin actions */
+const PLUGIN_ACTIONS = new Set(['install', 'uninstall', 'enable', 'disable', 'marketplace add'])
+
 export function runPluginCmd(
   action: string,
   target: string,
   scope?: string
 ): Promise<{ success: boolean; output?: string; error?: string }> {
+  if (!PLUGIN_ACTIONS.has(action)) {
+    return Promise.resolve({ success: false, error: `Unknown plugin action: ${action}` })
+  }
+  if (!isValidPackageName(target)) {
+    return Promise.resolve({ success: false, error: `Invalid plugin name: ${target}` })
+  }
   return new Promise((resolve) => {
     const claudePath = getClaudeCliPath()
     const args = ['plugin', ...action.split(' '), target]
@@ -201,7 +215,6 @@ export function runPluginCmd(
     }
     console.log(`[zeus] Running: ${claudePath} ${args.join(' ')}`)
     const child = spawn(claudePath, args, {
-      shell: true,
       env: getShellEnv(),
       timeout: 30000
     })

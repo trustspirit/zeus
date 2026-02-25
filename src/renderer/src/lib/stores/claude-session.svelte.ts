@@ -17,7 +17,10 @@ import {
 
 // ── Claude Session Store (headless -p mode) ──────────────────────────────────
 
-let nextConvId = 1
+/** Generate unique conversation IDs safe across HMR reloads */
+function genConvId(): string {
+  return `claude-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+}
 
 /** Max messages kept per conversation. Oldest pairs are trimmed to stay under this limit. */
 const MAX_MESSAGES = 200
@@ -229,12 +232,14 @@ class ClaudeSessionStore {
       this.activeId = null
       this.savedSessions = []
       this._currentWorkspace = null
+      this._lastMeaningfulStatus.clear()
+      this._taskIdToAgent.clear()
     }
   }
 
   /** Create a new conversation and switch to it. */
   create(workspacePath?: string): string {
-    const id = `claude-${nextConvId++}`
+    const id = genConvId()
 
     const conversation: ClaudeConversation = {
       id,
@@ -288,7 +293,7 @@ class ClaudeSessionStore {
     }
 
     // Create a new active conversation for the resumed session
-    const id = `claude-${nextConvId++}`
+    const id = genConvId()
     const conversation: ClaudeConversation = {
       id,
       claudeSessionId: saved.sessionId,
@@ -402,6 +407,7 @@ class ClaudeSessionStore {
       conv.pendingPrompt = null
       conv.activeSubagents = []
       conv.quickReplies = []
+      this._lastMeaningfulStatus.delete(id)
     }
 
     // [B1] Clean up main process session entry

@@ -290,9 +290,13 @@ function registerIPC(): void {
   ipcMain.handle('ide:open', (_, { ideCmd, workspacePath }: { ideCmd: string; workspacePath: string }) => {
     const allowedCmds = new Set(IDE_LIST.map((ide) => ide.cmd))
     if (!allowedCmds.has(ideCmd)) return { success: false, error: `Unknown IDE command: ${ideCmd}` }
+    // Validate workspace path exists and is a directory
+    if (!workspacePath || !fs.existsSync(workspacePath) || !fs.statSync(workspacePath).isDirectory()) {
+      return { success: false, error: `Invalid workspace path: ${workspacePath}` }
+    }
     try {
-      const { spawn } = require('node:child_process')
-      const child = spawn(ideCmd, [workspacePath], { detached: true, stdio: 'ignore', shell: true, env: getShellEnv() })
+      const { spawn: spawnChild } = require('node:child_process')
+      const child = spawnChild(ideCmd, [workspacePath], { detached: true, stdio: 'ignore', env: getShellEnv() })
       child.unref()
       return { success: true }
     } catch (e: unknown) {
@@ -308,10 +312,27 @@ function registerIPC(): void {
   })
 
   // ── System ──
-  ipcMain.handle('system:open-external', (_, url: string) => shell.openExternal(url))
+  ipcMain.handle('system:open-external', (_, url: string) => {
+    try {
+      const parsed = new URL(url)
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        console.warn(`[zeus] Blocked open-external with scheme: ${parsed.protocol}`)
+        return
+      }
+      return shell.openExternal(url)
+    } catch {
+      console.warn(`[zeus] Invalid URL passed to open-external: ${url}`)
+    }
+  })
   ipcMain.handle('system:reveal-in-finder', (_, p: string) => shell.showItemInFolder(p))
   ipcMain.handle('system:get-home', () => os.homedir())
-  ipcMain.handle('system:path-exists', (_, p: string) => fs.existsSync(p))
+  ipcMain.handle('system:path-exists', (_, p: string) => {
+    // Restrict to home directory subtree
+    const resolved = path.resolve(p)
+    const home = os.homedir()
+    if (!resolved.startsWith(home + path.sep) && resolved !== home) return false
+    return fs.existsSync(p)
+  })
 
   ipcMain.handle('system:get-dir-info', (_, dirPath: string) => {
     try {

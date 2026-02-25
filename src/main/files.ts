@@ -4,7 +4,7 @@
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs'
-import { execSync } from 'node:child_process'
+import { execSync, execFileSync } from 'node:child_process'
 import { SKIP_DIRS } from './skills.js'
 import type { AppStore } from './store.js'
 
@@ -106,14 +106,17 @@ function addMdEntry(fullPath: string, rootDir: string, results: MdFileEntry[]): 
 
 // ── Path Validation ────────────────────────────────────────────────────────────
 
-/** Validate that a file path is within a known workspace or home dir */
+/** Validate that a file path is within a known workspace or ~/.claude/ */
 export function isPathAllowed(filePath: string, store: AppStore): boolean {
   const resolved = path.resolve(filePath)
   const home = os.homedir()
+  // Allow workspace paths
   for (const ws of store.workspaces) {
     if (resolved.startsWith(ws.path + path.sep) || resolved === ws.path) return true
   }
-  if (resolved.startsWith(home + path.sep) || resolved === home) return true
+  // Allow ~/.claude/ directory (Claude config/sessions)
+  const claudeDir = path.join(home, '.claude')
+  if (resolved.startsWith(claudeDir + path.sep) || resolved === claudeDir) return true
   return false
 }
 
@@ -172,9 +175,9 @@ export function getGitDiff(workspacePath: string): string {
 
 export function getGitDiffFile(workspacePath: string, filePath: string): string {
   try {
-    const diff = execSync(`git diff HEAD -- "${filePath}"`, { cwd: workspacePath, ...GIT_EXEC_OPTS })
+    const diff = execFileSync('git', ['diff', 'HEAD', '--', filePath], { cwd: workspacePath, ...GIT_EXEC_OPTS })
     if (!diff.trim()) {
-      return execSync(`git diff -- "${filePath}"`, { cwd: workspacePath, ...GIT_EXEC_OPTS })
+      return execFileSync('git', ['diff', '--', filePath], { cwd: workspacePath, ...GIT_EXEC_OPTS })
     }
     return diff
   } catch {
@@ -241,7 +244,6 @@ export function readClaudeTranscript(sessionId: string, workspacePath: string): 
 
   // Try the project dir first
   const candidates = [encoded]
-  if (encoded.startsWith('-')) candidates.push(encoded)
   for (const candidate of candidates) {
     const p = path.join(claudeDir, candidate, `${sessionId}.jsonl`)
     if (fs.existsSync(p)) { jsonlPath = p; break }

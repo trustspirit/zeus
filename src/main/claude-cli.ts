@@ -1,7 +1,7 @@
 /**
  * Claude Code CLI — detection, version management, model aliases, and updates.
  */
-import { execSync, spawn } from 'node:child_process'
+import { execSync, execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { IDEDef } from './store.js'
@@ -21,6 +21,12 @@ export const IDE_LIST: IDEDef[] = [
 ]
 
 export function whichSync(cmd: string): boolean {
+  // Validate command name to prevent shell injection
+  if (!/^[\w-]+$/.test(cmd)) {
+    console.warn(`[zeus] whichSync: invalid command name rejected: ${cmd}`)
+    return false
+  }
+
   // Strategy 1: Use login shell to pick up user's full PATH (critical for packaged .app)
   // GUI apps on macOS don't inherit shell PATH — only /usr/bin:/bin:/usr/sbin:/sbin
   if (process.platform !== 'win32') {
@@ -36,8 +42,8 @@ export function whichSync(cmd: string): boolean {
   }
   // Strategy 2: Direct which/where (works in dev mode and Windows)
   try {
-    const whichCmd = process.platform === 'win32' ? `where ${cmd}` : `which ${cmd}`
-    const result = execSync(whichCmd, {
+    const whichCmd = process.platform === 'win32' ? 'where' : 'which'
+    const result = execSync(`${whichCmd} ${cmd}`, {
       encoding: 'utf-8',
       timeout: 3000,
       stdio: ['pipe', 'pipe', 'pipe']
@@ -95,7 +101,7 @@ export function isClaudeCodeInstalled(): boolean {
 export function getClaudeCodeVersion(): string | null {
   const claudePath = getClaudeCliPath()
   try {
-    return execSync(`"${claudePath}" --version`, {
+    return execFileSync(claudePath, ['--version'], {
       encoding: 'utf-8',
       timeout: 5000,
       stdio: ['pipe', 'pipe', 'pipe']
@@ -128,11 +134,12 @@ export function getClaudeModelAliases(): ModelAliasInfo[] {
     // Strategy 2: native binary — extract strings containing model aliases
     if (!src) {
       try {
-        const raw = execSync(
-          `strings "${realPath}" | grep -oE '\\{opus:"claude-[^"]+",sonnet:"claude-[^"]+",haiku:"claude-[^"]+"\\}' | head -1`,
-          { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
-        ).trim()
-        if (raw) src = raw
+        const raw = execFileSync('strings', [realPath], {
+          encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe']
+        })
+        // Search for model alias block in extracted strings
+        const aliasMatch = raw.match(/\{opus:"claude-[^"]+",sonnet:"claude-[^"]+",haiku:"claude-[^"]+"\}/)
+        if (aliasMatch) src = aliasMatch[0]
       } catch { /* ignore */ }
     }
 
@@ -182,7 +189,6 @@ export function checkLatestClaudeVersion(): Promise<{ current: string | null; la
     const currentSemver = current?.match(/(\d+\.\d+\.\d+)/)?.[1] ?? null
 
     const child = spawn('npm', ['view', '@anthropic-ai/claude-code', 'version'], {
-      shell: true,
       env: getShellEnv(),
       timeout: 15000
     })
@@ -210,8 +216,8 @@ export function checkLatestClaudeVersion(): Promise<{ current: string | null; la
 export function updateClaudeCode(): Promise<{ success: boolean; output?: string; error?: string }> {
   return new Promise((resolve) => {
     const child = spawn('npm', ['install', '-g', '@anthropic-ai/claude-code'], {
-      shell: true,
-      env: getShellEnv()
+      env: getShellEnv(),
+      timeout: 120000
     })
 
     let stdout = ''

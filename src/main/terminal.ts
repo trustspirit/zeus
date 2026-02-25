@@ -60,9 +60,8 @@ export function createTerminal(workspacePath?: string): { id: number; cwd: strin
 
   terminals.set(id, { pty: ptyProcess, workspace: cwd })
 
-  const win = _getWindow()
   ptyProcess.onData((data) => {
-    win?.webContents.send('terminal:data', { id, data })
+    _getWindow()?.webContents.send('terminal:data', { id, data })
   })
 
   ptyProcess.onExit(({ exitCode }) => {
