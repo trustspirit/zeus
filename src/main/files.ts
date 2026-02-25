@@ -277,6 +277,7 @@ export function readClaudeTranscript(sessionId: string, workspacePath: string): 
         if (type === 'user' && msg?.role === 'user') {
           const content = msg.content
           let text = ''
+          const toolResults: TranscriptMessage['blocks'] = []
           if (typeof content === 'string') {
             text = content
           } else if (Array.isArray(content)) {
@@ -287,9 +288,30 @@ export function readClaudeTranscript(sessionId: string, workspacePath: string): 
                 if (!part.text.startsWith('<ide_opened_file>') && !part.text.startsWith('<ide_')) {
                   textParts.push(part.text)
                 }
+              } else if (part?.type === 'tool_result') {
+                // Extract tool_result content to attach to the previous assistant message
+                let resultText = ''
+                if (typeof part.content === 'string') {
+                  resultText = part.content
+                } else if (Array.isArray(part.content)) {
+                  resultText = part.content
+                    .filter((c: Record<string, unknown>) => c?.type === 'text' && typeof c.text === 'string')
+                    .map((c: Record<string, unknown>) => c.text as string)
+                    .join('\n')
+                }
+                if (resultText) {
+                  toolResults.push({ type: 'tool_result', content: resultText })
+                }
               }
             }
             text = textParts.join('\n')
+          }
+          // Attach tool_results to the last assistant message's blocks
+          if (toolResults.length > 0 && messages.length > 0) {
+            const lastMsg = messages[messages.length - 1]
+            if (lastMsg.role === 'assistant' && lastMsg.blocks) {
+              lastMsg.blocks = [...lastMsg.blocks, ...toolResults]
+            }
           }
           if (text.trim()) {
             const trimmed = text.trim()

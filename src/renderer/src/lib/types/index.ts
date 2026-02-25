@@ -213,6 +213,8 @@ export interface ClaudeConversation {
   workspacePath?: string
   messages: ClaudeMessage[]
   isStreaming: boolean
+  /** Timestamp when streaming started (for elapsed time display) */
+  streamingStartedAt: number | null
   streamingContent: string
   streamingBlocks: ContentBlock[]
   /** Real-time status line shown during streaming (e.g. "Reading file.ts…", "Running bash…") */

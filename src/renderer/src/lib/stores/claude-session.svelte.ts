@@ -158,6 +158,8 @@ class ClaudeSessionStore {
   private _unsubSubagentActivity: (() => void) | null = null
   /** Whether the subagent file watcher is currently active */
   private _subagentWatchActive = false
+  /** Conversation IDs whose abort was initiated by send()/abort() — suppress error in _handleDone */
+  private _programmaticAborts = new Set<string>()
 
   /** Start listening for Claude session events. Call once on mount. */
   listen() {
@@ -180,9 +182,15 @@ class ClaudeSessionStore {
     this._stopSubagentWatch()
   }
 
-  /** Load saved sessions for a workspace */
+  /** Load saved sessions for a workspace, excluding any already open as active conversations */
   async loadSaved(workspacePath: string) {
-    this.savedSessions = await window.zeus.claudeSession.listSaved(workspacePath)
+    const all = await window.zeus.claudeSession.listSaved(workspacePath)
+    const activeSessionIds = new Set(
+      this.conversations
+        .filter(c => c.claudeSessionId)
+        .map(c => c.claudeSessionId)
+    )
+    this.savedSessions = all.filter(s => !activeSessionIds.has(s.sessionId))
   }
 
   /**
@@ -232,8 +240,7 @@ class ClaudeSessionStore {
       this.activeId = null
       this.savedSessions = []
       this._currentWorkspace = null
-      this._lastMeaningfulStatus.clear()
-      this._taskIdToAgent.clear()
+      this._tracking.clear()
     }
   }
 
@@ -248,6 +255,7 @@ class ClaudeSessionStore {
       workspacePath,
       messages: [],
       isStreaming: false,
+      streamingStartedAt: null,
       streamingContent: '',
       streamingBlocks: [],
       streamingStatus: '',
@@ -301,6 +309,7 @@ class ClaudeSessionStore {
       workspacePath: saved.workspacePath,
       messages: restoredMessages,
       isStreaming: false,
+      streamingStartedAt: null,
       streamingContent: '',
       streamingBlocks: [],
       streamingStatus: '',
@@ -347,6 +356,7 @@ class ClaudeSessionStore {
         conv.messages = [...conv.messages, partialMsg]
       }
       // Abort the running process — main process kills it and fires 'done'
+      this._programmaticAborts.add(id)
       await window.zeus.claudeSession.abort(id)
       conv.isStreaming = false
       conv.streamingContent = ''
@@ -354,7 +364,7 @@ class ClaudeSessionStore {
       conv.streamingStatus = ''
       conv.pendingPrompt = null
       conv.activeSubagents = []
-      this._resetBlockTracking()
+      this._resetBlockTracking(id)
     }
 
     // Clear quick replies from previous turn
@@ -371,10 +381,11 @@ class ClaudeSessionStore {
 
     conv.messages = [...conv.messages, userMsg]
     conv.isStreaming = true
+    conv.streamingStartedAt = Date.now()
     conv.streamingContent = ''
     conv.streamingBlocks = []
     conv.streamingStatus = 'Sending…'
-    this._resetBlockTracking()
+    this._resetBlockTracking(id)
     conv.tokenUsage = null
 
     // Trigger reactivity
@@ -407,7 +418,7 @@ class ClaudeSessionStore {
       conv.pendingPrompt = null
       conv.activeSubagents = []
       conv.quickReplies = []
-      this._lastMeaningfulStatus.delete(id)
+      this._tracking.delete(id)
     }
 
     // [B1] Clean up main process session entry
@@ -449,6 +460,7 @@ class ClaudeSessionStore {
     conv.messages = [...conv.messages, choiceMsg]
 
     conv.isStreaming = true  // Re-activate streaming (process may have exited; respond will re-spawn)
+    conv.streamingStartedAt = Date.now()
     conv.streamingStatus = 'Responding…'
     this.conversations = [...this.conversations]
 
@@ -472,6 +484,7 @@ class ClaudeSessionStore {
   async abort(id: string) {
     const conv = this.conversations.find((c) => c.id === id)
     if (conv?.isStreaming) {
+      this._programmaticAborts.add(id)
       await window.zeus.claudeSession.abort(id)
       conv.isStreaming = false
       conv.streamingStatus = ''
@@ -557,54 +570,47 @@ class ClaudeSessionStore {
   }
 
   /**
-   * Map from Claude API content_block index → position in streamingBlocks array.
-   * Used to build streamingBlocks incrementally from content_block_* events.
+   * Per-conversation block tracking state.
+   * Avoids index map corruption when multiple conversations stream concurrently.
    */
-  private _blockIndexMap = new Map<number, number>()
+  private _tracking = new Map<string, {
+    blockIndexMap: Map<number, number>
+    toolInputAccum: Map<number, string>
+    pendingSubagentInput: Map<number, { convId: string; subagentId: string; partialJson: string }>
+    pendingAuxTool: { blockIndex: number; toolName: string; partialJson: string } | null
+    maybeAgentBlocks: Map<number, { convId: string; blockId: string; toolName: string; partialJson: string }>
+    taskIdToAgent: Map<string, { name: string; color: string; description: string }>
+    lastMeaningfulStatus: string
+  }>()
 
-  /** Accumulated raw JSON for each tool_use block (by API block index) */
-  private _toolInputAccum = new Map<number, string>()
-
-  /**
-   * Track pending subagent tool blocks by content block index.
-   * Key: blockIndex, Value: { convId, subagentId, partialJson }
-   * Used to accumulate input_json_delta and update subagent name/desc once parseable.
-   */
-  private _pendingSubagentInput = new Map<number, { convId: string; subagentId: string; partialJson: string }>()
-
-  /** Track pending aux tool (TaskOutput etc.) to resolve task_id from streaming input */
-  private _pendingAuxTool: { blockIndex: number; toolName: string; partialJson: string } | null = null
-
-  /**
-   * Track unclassified tool_use blocks that might turn out to be agent dispatches.
-   * At content_block_start, we don't have input yet — if the tool name isn't recognized,
-   * we track it here. On input_json_delta, if the input looks like an agent dispatch,
-   * we promote it to a full subagent.
-   */
-  private _maybeAgentBlocks = new Map<number, { convId: string; blockId: string; toolName: string; partialJson: string }>()
-
-  /**
-   * Persistent map: taskId → { name, color, description }.
-   * Survives subagent clearing so TaskOutput can still resolve agent names
-   * even after backgrounded subagents are no longer in activeSubagents.
-   */
-  private _taskIdToAgent = new Map<string, { name: string; color: string; description: string }>()
-
-  /** Last informative status per conversation — prevents long "Processing…" stalls */
-  private _lastMeaningfulStatus = new Map<string, string>()
+  /** Get or create per-conversation tracking state */
+  private _t(convId: string) {
+    let t = this._tracking.get(convId)
+    if (!t) {
+      t = {
+        blockIndexMap: new Map(),
+        toolInputAccum: new Map(),
+        pendingSubagentInput: new Map(),
+        pendingAuxTool: null,
+        maybeAgentBlocks: new Map(),
+        taskIdToAgent: new Map(),
+        lastMeaningfulStatus: ''
+      }
+      this._tracking.set(convId, t)
+    }
+    return t
+  }
 
   /**
    * Get the best available status for a conversation.
    * Falls back through: subagent summary → last meaningful status → generic.
    */
   private _bestStatus(conv: ClaudeConversation): string {
-    // If subagents are running, build a summary from their activity
     if (conv.activeSubagents.length > 0) {
       const summary = buildSubagentSummary(conv.activeSubagents)
       if (summary) return summary
     }
-    // Fall back to the last meaningful status we captured
-    return this._lastMeaningfulStatus.get(conv.id) || 'Working…'
+    return this._t(conv.id).lastMeaningfulStatus || 'Working…'
   }
 
   /**
@@ -613,20 +619,33 @@ class ClaudeSessionStore {
    */
   private _setStatus(conv: ClaudeConversation, status: string): void {
     conv.streamingStatus = status
-    // Remember informative statuses (not vague ones)
     const vague = new Set(['Processing…', 'Working…', ''])
     if (!vague.has(status)) {
-      this._lastMeaningfulStatus.set(conv.id, status)
+      this._t(conv.id).lastMeaningfulStatus = status
     }
   }
 
-  /** Clear incremental block-building state */
-  private _resetBlockTracking(): void {
-    this._blockIndexMap.clear()
-    this._toolInputAccum.clear()
-    this._pendingSubagentInput.clear()
-    this._pendingAuxTool = null
-    this._maybeAgentBlocks.clear()
+  /** Clear incremental block-building state for a conversation */
+  private _resetBlockTracking(convId?: string): void {
+    if (convId) {
+      const t = this._tracking.get(convId)
+      if (t) {
+        t.blockIndexMap.clear()
+        t.toolInputAccum.clear()
+        t.pendingSubagentInput.clear()
+        t.pendingAuxTool = null
+        t.maybeAgentBlocks.clear()
+      }
+    } else {
+      // Legacy fallback — clear all (should not be needed anymore)
+      for (const t of this._tracking.values()) {
+        t.blockIndexMap.clear()
+        t.toolInputAccum.clear()
+        t.pendingSubagentInput.clear()
+        t.pendingAuxTool = null
+        t.maybeAgentBlocks.clear()
+      }
+    }
   }
 
   /** Throttled reactivity trigger — batch rapid streaming events into one update per frame */
@@ -655,6 +674,7 @@ class ClaudeSessionStore {
   private _handleEvent(id: string, rawEvent: ClaudeStreamEvent) {
     const conv = this._findConv(id)
     if (!conv) return
+    const t = this._t(id)
 
     // Unwrap stream_event wrapper if present (from --include-partial-messages)
     let event = rawEvent
@@ -687,7 +707,7 @@ class ClaudeSessionStore {
       // If we're already building blocks incrementally (from content_block_* events),
       // DON'T overwrite them — use the snapshot only for subagent detection and token usage.
       const { text, blocks } = extractText(event.message.content)
-      const hasIncrementalBlocks = conv.streamingBlocks.length > 0 && this._blockIndexMap.size > 0
+      const hasIncrementalBlocks = conv.streamingBlocks.length > 0 && t.blockIndexMap.size > 0
       if (!hasIncrementalBlocks) {
         // No incremental blocks yet — use the snapshot (e.g. --include-partial-messages mode)
         conv.streamingContent = text
@@ -759,7 +779,7 @@ class ClaudeSessionStore {
             if (tidMatch) {
               existing.taskId = tidMatch[1]
               // Register in persistent map so TaskOutput can resolve even after clearing
-              this._taskIdToAgent.set(tidMatch[1], {
+              t.taskIdToAgent.set(tidMatch[1], {
                 name: existing.name,
                 color: existing.color,
                 description: existing.description
@@ -801,7 +821,7 @@ class ClaudeSessionStore {
               const tidMatch = resultBlock.content.match(/([a-f0-9]{6,12})/i)
               if (tidMatch && !sa.taskId) {
                 sa.taskId = tidMatch[1]
-                this._taskIdToAgent.set(tidMatch[1], { name: sa.name, color: sa.color, description: sa.description })
+                t.taskIdToAgent.set(tidMatch[1], { name: sa.name, color: sa.color, description: sa.description })
               }
               continue
             }
@@ -849,18 +869,18 @@ class ClaudeSessionStore {
         const newBlock: ContentBlock = { type: 'tool_use', id: typeof cb.id === 'string' ? cb.id : undefined, name: cb.name, input: {} }
         const pos = conv.streamingBlocks.length
         conv.streamingBlocks = [...conv.streamingBlocks, newBlock]
-        this._blockIndexMap.set(blockIndex, pos)
-        this._toolInputAccum.set(blockIndex, '')
+        t.blockIndexMap.set(blockIndex, pos)
+        t.toolInputAccum.set(blockIndex, '')
       } else if (cb?.type === 'thinking') {
         const newBlock: ContentBlock = { type: 'thinking', thinking: '' }
         const pos = conv.streamingBlocks.length
         conv.streamingBlocks = [...conv.streamingBlocks, newBlock]
-        this._blockIndexMap.set(blockIndex, pos)
+        t.blockIndexMap.set(blockIndex, pos)
       } else if (cb?.type === 'text') {
         const newBlock: ContentBlock = { type: 'text', text: '' }
         const pos = conv.streamingBlocks.length
         conv.streamingBlocks = [...conv.streamingBlocks, newBlock]
-        this._blockIndexMap.set(blockIndex, pos)
+        t.blockIndexMap.set(blockIndex, pos)
       }
 
       // ── Subagent / tool tracking ──
@@ -892,14 +912,14 @@ class ClaudeSessionStore {
               finished: false
             }]
             // Register for input_json_delta tracking
-            this._pendingSubagentInput.set(blockIndex, { convId: id, subagentId: blockId, partialJson: '' })
+            t.pendingSubagentInput.set(blockIndex, { convId: id, subagentId: blockId, partialJson: '' })
           }
           this._setStatus(conv, this._formatToolStatus(cb.name, input))
         } else if (isSubagentAuxTool(cb.name)) {
           // TaskOutput / background_output / background_cancel — show as subagent status
-          this._setStatus(conv, subagentAuxLabel(cb.name, input, conv.activeSubagents, this._taskIdToAgent))
+          this._setStatus(conv, subagentAuxLabel(cb.name, input, conv.activeSubagents, t.taskIdToAgent))
           // Track aux tool input_json_delta so we can resolve task_id once it arrives
-          this._pendingAuxTool = { blockIndex, toolName: cb.name, partialJson: '' }
+          t.pendingAuxTool = { blockIndex, toolName: cb.name, partialJson: '' }
           // Keep any existing active subagents alive during this wait
         } else if (conv.activeSubagents.length > 0) {
           // Tool inside a subagent — update the most recently started (unfinished) agent
@@ -916,7 +936,7 @@ class ClaudeSessionStore {
           this._setStatus(conv, this._formatToolStatus(cb.name, input))
           // Track as a potential agent — if input_json_delta reveals agent-like fields,
           // we'll promote this to a subagent.
-          this._maybeAgentBlocks.set(blockIndex, { convId: id, blockId, toolName: cb.name, partialJson: '' })
+          t.maybeAgentBlocks.set(blockIndex, { convId: id, blockId, toolName: cb.name, partialJson: '' })
         }
       } else if (cb?.type === 'thinking') {
         const target = this._lastRunningAgent(conv)
@@ -940,7 +960,7 @@ class ClaudeSessionStore {
           conv.streamingContent = conv.streamingContent.slice(-MAX_STREAMING_CONTENT)
         }
         // Append to the corresponding text block in streamingBlocks
-        const blockPos = this._blockIndexMap.get(deltaIndex)
+        const blockPos = t.blockIndexMap.get(deltaIndex)
         if (blockPos !== undefined && conv.streamingBlocks[blockPos]?.type === 'text') {
           conv.streamingBlocks[blockPos].text = (conv.streamingBlocks[blockPos].text ?? '') + delta.text
           // Trigger array reactivity
@@ -949,19 +969,21 @@ class ClaudeSessionStore {
         this._setStatus(conv, 'Writing…')
       } else if (delta?.type === 'thinking_delta' && typeof delta.thinking === 'string') {
         // Append to the corresponding thinking block
-        const blockPos = this._blockIndexMap.get(deltaIndex)
+        const blockPos = t.blockIndexMap.get(deltaIndex)
         if (blockPos !== undefined && conv.streamingBlocks[blockPos]?.type === 'thinking') {
           conv.streamingBlocks[blockPos].thinking = (conv.streamingBlocks[blockPos].thinking ?? '') + delta.thinking
+          // Trigger array reactivity (same as text_delta)
+          conv.streamingBlocks = [...conv.streamingBlocks]
         }
         this._setStatus(conv, 'Thinking…')
       } else if (delta?.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
         // Accumulate raw JSON for the tool_use block (for finalization on block_stop)
-        const existing = this._toolInputAccum.get(deltaIndex)
+        const existing = t.toolInputAccum.get(deltaIndex)
         if (existing !== undefined) {
-          this._toolInputAccum.set(deltaIndex, existing + delta.partial_json)
+          t.toolInputAccum.set(deltaIndex, existing + delta.partial_json)
         }
         // Tool input being streamed — accumulate for pending subagent blocks
-        const pending = this._pendingSubagentInput.get(deltaIndex)
+        const pending = t.pendingSubagentInput.get(deltaIndex)
         if (pending) {
           pending.partialJson += delta.partial_json
           // Try to extract subagent name/description from partial JSON
@@ -969,7 +991,7 @@ class ClaudeSessionStore {
         }
 
         // ── Check unclassified tool blocks — promote to subagent if input looks like agent dispatch ──
-        const maybeAgent = this._maybeAgentBlocks.get(deltaIndex)
+        const maybeAgent = t.maybeAgentBlocks.get(deltaIndex)
         if (maybeAgent) {
           maybeAgent.partialJson += delta.partial_json
           // Try to parse partial input to see if it's an agent dispatch
@@ -997,19 +1019,19 @@ class ClaudeSessionStore {
                 finished: false
               }]
               // Register for further input_json_delta tracking
-              this._pendingSubagentInput.set(deltaIndex, { convId: maybeAgent.convId, subagentId: maybeAgent.blockId, partialJson: maybeAgent.partialJson })
+              t.pendingSubagentInput.set(deltaIndex, { convId: maybeAgent.convId, subagentId: maybeAgent.blockId, partialJson: maybeAgent.partialJson })
             }
-            this._maybeAgentBlocks.delete(deltaIndex)
+            t.maybeAgentBlocks.delete(deltaIndex)
           }
         }
 
         // Also accumulate for aux tools (TaskOutput etc.) to resolve task_id
-        if (this._pendingAuxTool && this._pendingAuxTool.blockIndex === deltaIndex) {
-          this._pendingAuxTool.partialJson += delta.partial_json
+        if (t.pendingAuxTool && t.pendingAuxTool.blockIndex === deltaIndex) {
+          t.pendingAuxTool.partialJson += delta.partial_json
           // Try parsing to extract task_id and update status label
           try {
-            const auxInput = JSON.parse(this._pendingAuxTool.partialJson) as Record<string, unknown>
-            this._setStatus(conv, subagentAuxLabel(this._pendingAuxTool.toolName, auxInput, conv.activeSubagents, this._taskIdToAgent))
+            const auxInput = JSON.parse(t.pendingAuxTool.partialJson) as Record<string, unknown>
+            this._setStatus(conv, subagentAuxLabel(t.pendingAuxTool.toolName, auxInput, conv.activeSubagents, t.taskIdToAgent))
             // Also try to link task_id to a subagent that doesn't have one yet
             if (typeof auxInput.task_id === 'string') {
               const tid = auxInput.task_id
@@ -1022,24 +1044,24 @@ class ClaudeSessionStore {
                   const unlinked = bgUnlinked || conv.activeSubagents.find((s) => !s.taskId && !s.finished)
                   if (unlinked) {
                     unlinked.taskId = tid
-                    this._taskIdToAgent.set(tid, { name: unlinked.name, color: unlinked.color, description: unlinked.description })
+                    t.taskIdToAgent.set(tid, { name: unlinked.name, color: unlinked.color, description: unlinked.description })
                   }
                 }
               }
               // Also register in persistent map from existing data
-              if (!this._taskIdToAgent.has(tid)) {
+              if (!t.taskIdToAgent.has(tid)) {
                 const match = conv.activeSubagents.find(s => s.taskId === tid)
                 if (match) {
-                  this._taskIdToAgent.set(tid, { name: match.name, color: match.color, description: match.description })
+                  t.taskIdToAgent.set(tid, { name: match.name, color: match.color, description: match.description })
                 }
               }
             }
           } catch {
             // Partial JSON, try a simpler extract for task_id
-            const tidMatch = this._pendingAuxTool.partialJson.match(/"task_id"\s*:\s*"([a-f0-9]+)"/i)
+            const tidMatch = t.pendingAuxTool.partialJson.match(/"task_id"\s*:\s*"([a-f0-9]+)"/i)
             if (tidMatch) {
-              const partialInput = { task_id: tidMatch[1], block: this._pendingAuxTool.partialJson.includes('"block":true') || this._pendingAuxTool.partialJson.includes('"block": true') }
-              this._setStatus(conv, subagentAuxLabel(this._pendingAuxTool.toolName, partialInput as unknown as Record<string, unknown>, conv.activeSubagents, this._taskIdToAgent))
+              const partialInput = { task_id: tidMatch[1], block: t.pendingAuxTool.partialJson.includes('"block":true') || t.pendingAuxTool.partialJson.includes('"block": true') }
+              this._setStatus(conv, subagentAuxLabel(t.pendingAuxTool.toolName, partialInput as unknown as Record<string, unknown>, conv.activeSubagents, t.taskIdToAgent))
             }
           }
         }
@@ -1053,12 +1075,12 @@ class ClaudeSessionStore {
       const stopIndex = typeof any.index === 'number' ? (any.index as number) : -1
 
       // ── Finalize the block in streamingBlocks ──
-      const blockPos = this._blockIndexMap.get(stopIndex)
+      const blockPos = t.blockIndexMap.get(stopIndex)
       if (blockPos !== undefined) {
         const block = conv.streamingBlocks[blockPos]
         if (block?.type === 'tool_use') {
           // Parse accumulated JSON into the block's input
-          const rawJson = this._toolInputAccum.get(stopIndex)
+          const rawJson = t.toolInputAccum.get(stopIndex)
           if (rawJson) {
             try {
               block.input = JSON.parse(rawJson) as Record<string, unknown>
@@ -1066,11 +1088,11 @@ class ClaudeSessionStore {
           }
           conv.streamingBlocks = [...conv.streamingBlocks]
         }
-        this._toolInputAccum.delete(stopIndex)
+        t.toolInputAccum.delete(stopIndex)
       }
 
       // If this was a subagent tool block, finalize input parsing and mark as executing
-      const pending = this._pendingSubagentInput.get(stopIndex)
+      const pending = t.pendingSubagentInput.get(stopIndex)
       if (pending) {
         // Final parse attempt with the complete JSON
         try {
@@ -1085,7 +1107,7 @@ class ClaudeSessionStore {
             if (typeof fullInput.task_id === 'string') {
               sa.taskId = fullInput.task_id
               // Register in persistent map for TaskOutput name resolution
-              this._taskIdToAgent.set(fullInput.task_id, {
+              t.taskIdToAgent.set(fullInput.task_id, {
                 name: sa.name,
                 color: sa.color,
                 description: sa.description
@@ -1100,14 +1122,14 @@ class ClaudeSessionStore {
             }
           }
         } catch { /* partial json, already handled incrementally */ }
-        this._pendingSubagentInput.delete(stopIndex)
+        t.pendingSubagentInput.delete(stopIndex)
         // Start watching child JSONL files now that the subagent is executing
         this._maybeStartSubagentWatch(conv)
       }
 
       // ── Handle maybeAgent blocks that reached block_stop ──
       // If the block was still in _maybeAgentBlocks at stop, try final parse
-      const maybeAgentFinal = this._maybeAgentBlocks.get(stopIndex)
+      const maybeAgentFinal = t.maybeAgentBlocks.get(stopIndex)
       if (maybeAgentFinal) {
         try {
           const fullInput = JSON.parse(maybeAgentFinal.partialJson) as Record<string, unknown>
@@ -1135,12 +1157,12 @@ class ClaudeSessionStore {
             }
           }
         } catch { /* partial json */ }
-        this._maybeAgentBlocks.delete(stopIndex)
+        t.maybeAgentBlocks.delete(stopIndex)
       }
 
       // Clear aux tool tracking when its block finishes
-      if (this._pendingAuxTool && this._pendingAuxTool.blockIndex === stopIndex) {
-        this._pendingAuxTool = null
+      if (t.pendingAuxTool && t.pendingAuxTool.blockIndex === stopIndex) {
+        t.pendingAuxTool = null
       }
       // Block finished — show best available status instead of vague "Processing…"
       conv.streamingStatus = this._bestStatus(conv)
@@ -1164,8 +1186,8 @@ class ClaudeSessionStore {
       }
       conv.streamingStatus = ''
       conv.activeSubagents = []
-      this._resetBlockTracking()
-      this._taskIdToAgent.clear()
+      this._resetBlockTracking(id)
+      t.taskIdToAgent.clear()
       this._stopSubagentWatch()
 
     } else if (event.type === 'system') {
@@ -1214,7 +1236,7 @@ class ClaudeSessionStore {
                 const tidMatch = rc.match(/([a-f0-9]{6,12})/i)
                 if (tidMatch && !matchedSa.taskId) {
                   matchedSa.taskId = tidMatch[1]
-                  this._taskIdToAgent.set(tidMatch[1], {
+                  t.taskIdToAgent.set(tidMatch[1], {
                     name: matchedSa.name,
                     color: matchedSa.color,
                     description: matchedSa.description
@@ -1341,8 +1363,12 @@ class ClaudeSessionStore {
   private _handleDone(id: string, exitCode: number, sessionId?: string) {
     const conv = this._findConv(id)
     if (!conv) return
+    const dt = this._t(id)
 
-    console.log(`[zeus] _handleDone: id=${id}, exitCode=${exitCode}, hasPendingPrompt=${!!conv.pendingPrompt}, hasContent=${!!conv.streamingContent.trim()}`)
+    // If this abort was initiated programmatically (send() or abort()), suppress error messages
+    const wasProgrammaticAbort = this._programmaticAborts.delete(id)
+
+    console.log(`[zeus] _handleDone: id=${id}, exitCode=${exitCode}, programmaticAbort=${wasProgrammaticAbort}, hasPendingPrompt=${!!conv.pendingPrompt}, hasContent=${!!conv.streamingContent.trim()}`)
 
     // Stop subagent watcher when session ends
     this._stopSubagentWatch()
@@ -1373,9 +1399,9 @@ class ClaudeSessionStore {
       conv.streamingBlocks = []
       conv.streamingStatus = 'Waiting for your response…'
       conv.activeSubagents = []
-      this._resetBlockTracking()
-      this._lastMeaningfulStatus.delete(conv.id)
-      this._taskIdToAgent.clear()
+      this._resetBlockTracking(id)
+      dt.lastMeaningfulStatus = ''
+      dt.taskIdToAgent.clear()
       this.conversations = [...this.conversations]
       return
     }
@@ -1408,8 +1434,8 @@ class ClaudeSessionStore {
         }
         conv.messages = [...conv.messages, assistantMsg]
       }
-    } else if (exitCode !== 0) {
-      // Error case
+    } else if (exitCode !== 0 && !wasProgrammaticAbort) {
+      // Error case — only show if not a programmatic abort (send/cancel)
       const errorMsg: ClaudeMessage = {
         id: `msg-${Date.now()}-error`,
         role: 'assistant',
@@ -1420,13 +1446,14 @@ class ClaudeSessionStore {
     }
 
     conv.isStreaming = false
+    conv.streamingStartedAt = null
     conv.streamingContent = ''
     conv.streamingBlocks = []
     conv.streamingStatus = ''
     conv.pendingPrompt = null
-    this._resetBlockTracking()
-    this._lastMeaningfulStatus.delete(conv.id)
-    this._taskIdToAgent.clear()
+    this._resetBlockTracking(id)
+    dt.lastMeaningfulStatus = ''
+    dt.taskIdToAgent.clear()
 
     // Detect model-level questions with numbered choices for quick-reply UI
     conv.quickReplies = detectQuickReplies(conv.messages)

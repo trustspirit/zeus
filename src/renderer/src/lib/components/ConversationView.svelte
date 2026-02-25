@@ -59,11 +59,11 @@
     }
   })
 
-  // Subagent elapsed time ticker (updates every second)
+  // Elapsed time ticker — runs whenever streaming is active (not just subagents)
   let elapsedTick = $state(0)
   let elapsedTimer: ReturnType<typeof setInterval> | null = null
   $effect(() => {
-    if (conv?.activeSubagents && conv.activeSubagents.length > 0) {
+    if (conv?.isStreaming) {
       if (!elapsedTimer) {
         elapsedTimer = setInterval(() => { elapsedTick++ }, 1000)
       }
@@ -83,17 +83,21 @@
     return `${mins}m ${rem}s`
   }
 
-  // [P2] Auto-scroll with rAF throttle — only when user is near bottom
+  // [P2] Auto-scroll with rAF throttle — only when user is near bottom AND content actually changed
   let scrollPending = false
+  let prevMsgLen = 0
+  let prevContentLen = 0
   function isNearBottom(): boolean {
     if (!scrollEl) return true
     return scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 100
   }
   $effect(() => {
-    const _ = conv?.messages.length
-    const __ = conv?.streamingContent
-    void _
-    void __
+    const msgLen = conv?.messages.length ?? 0
+    const contentLen = conv?.streamingContent?.length ?? 0
+    // Skip if no actual content change (prevents scroll jump from subagent status updates)
+    if (msgLen === prevMsgLen && contentLen === prevContentLen) return
+    prevMsgLen = msgLen
+    prevContentLen = contentLen
     if (!scrollPending && isNearBottom()) {
       scrollPending = true
       requestAnimationFrame(() => {
@@ -301,7 +305,10 @@
         case 'tool_result':
           if (block.content) {
             const summary = escapeHtml(summarizeToolResult(block.content, lastToolName))
-            const content = escapeHtml(block.content.length > 500 ? block.content.slice(0, 500) + '…' : block.content)
+            // Inside a code fence, only escape triple-backtick sequences to avoid breaking the fence.
+            // marked handles HTML escaping inside <pre><code> blocks.
+            const raw = block.content.length > 500 ? block.content.slice(0, 500) + '…' : block.content
+            const content = raw.replace(/```/g, '` ` `')
             const prefix = inSubagent ? '> ' : ''
             parts.push(`${prefix}<details><summary class="tool-result-summary">  ⎿ ${summary}</summary>\n\n\`\`\`\n${content}\n\`\`\`\n</details>\n`)
           }
@@ -310,7 +317,7 @@
         case 'thinking':
           if (block.thinking) {
             const text = block.thinking.length > 200 ? block.thinking.slice(0, 200) + '…' : block.thinking
-            parts.push(`\n<details><summary>Thinking</summary>\n\n${text}\n</details>\n`)
+            parts.push(`\n<details><summary>Thinking</summary>\n\n${escapeHtml(text)}\n</details>\n`)
           }
           lastToolName = undefined
           break
@@ -380,18 +387,20 @@
             {#if message.role === 'user'}
               <div class="msg-user">
                 <div class="msg-user-bubble">
-                  {#if !message.displayContent && message.content.length > 500}
+                  {#if message.displayContent}
                     <span class="msg-skill-badge">skill</span>
+                    {message.displayContent}
+                  {:else if message.content.length > 500}
                     {message.content.slice(0, 120).trim()}…
                   {:else}
-                    {message.displayContent || message.content}
+                    {message.content}
                   {/if}
                 </div>
               </div>
             {:else}
               <div class="msg-assistant">
                 <div class="msg-avatar">
-                  <IconClaude size={18} />
+                  <span class="avatar-dot"></span>
                 </div>
                 <div class="msg-content">
                   {#if message.blocks && message.blocks.length > 0}
@@ -432,9 +441,6 @@
         {#if conv.isStreaming}
           <div class="msg assistant streaming">
             <div class="msg-assistant">
-              <div class="msg-avatar">
-                <IconClaude size={18} />
-              </div>
               <div class="msg-content">
                 {#if conv.streamingBlocks.length > 0}
                   {@const trailing = getTrailingContent(conv.streamingBlocks, conv.streamingContent)}
@@ -451,6 +457,9 @@
                     <div class="sa-table-header">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                       <span>{activeAgents.length} agent{activeAgents.length !== 1 ? 's' : ''} running</span>
+                      {#if conv.streamingStartedAt}
+                        <span class="status-elapsed">{formatElapsed(conv.streamingStartedAt)}</span>
+                      {/if}
                     </div>
                     <div class="sa-table-body">
                       <div class="sa-row sa-row-head">
@@ -488,6 +497,9 @@
                       <span class="pulse"></span>
                     </span>
                     <span class="status-text">{conv.streamingStatus || 'Thinking…'}</span>
+                    {#if conv.streamingStartedAt}
+                      <span class="status-elapsed">{formatElapsed(conv.streamingStartedAt)}</span>
+                    {/if}
                   </div>
                 {/if}
                 <!-- Token usage: shown during streaming when data is available -->
@@ -515,7 +527,7 @@
           <div class="msg assistant">
             <div class="msg-assistant">
               <div class="msg-avatar">
-                <IconClaude size={18} />
+                <span class="avatar-dot"></span>
               </div>
               <div class="msg-content">
                 <div class="prompt-ui">
@@ -695,10 +707,13 @@
   }
   .msg-assistant { display: flex; gap: 12px; padding: 12px 0; }
   .msg-avatar {
-    width: 28px; height: 28px; border-radius: 10px;
+    width: 12px; height: 12px;
     display: flex; align-items: center; justify-content: center;
-    background: var(--accent-glow); color: var(--accent);
-    flex-shrink: 0; margin-top: 2px;
+    flex-shrink: 0; margin-top: 6px;
+  }
+  .avatar-dot {
+    display: block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
   }
   .msg-content { flex: 1; min-width: 0; padding-top: 2px; }
 
@@ -823,6 +838,10 @@
     100% { opacity: 0.4; transform: scale(0.8); }
   }
   .status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 500px; }
+  .status-elapsed {
+    font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);
+    flex-shrink: 0; margin-left: auto;
+  }
 
   /* ── Subagent Table ──────────────────────────────────────────────────── */
   .sa-table {
